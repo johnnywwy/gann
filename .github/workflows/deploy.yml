@@ -17,23 +17,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9 # 或者指定你本地用的版本，如 8
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: "npm" # 开启缓存，让下次部署快得飞起
+          cache: "pnpm" # 现在的 setup-node 已经原生支持缓存 pnpm 了
 
-      - name: Install & Build
-        run: |
-          npm install
-          npm run build # 确保你的 package.json 里有 build 命令
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build
+        run: pnpm run build
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          # 打包产物的目录，Vite 默认是 dist，如果是旧版 Webpack 可能是 build
-          path: ./dist 
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          path: ./dist
