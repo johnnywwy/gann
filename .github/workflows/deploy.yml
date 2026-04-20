@@ -1,0 +1,39 @@
+name: Deploy Frontend
+
+on:
+  push:
+    branches: [ "main" ] # 监听 main 分支的推送
+
+# 设置 GitHub 权限，允许 Actions 修改 Pages 内容
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm" # 开启缓存，让下次部署快得飞起
+
+      - name: Install & Build
+        run: |
+          npm install
+          npm run build # 确保你的 package.json 里有 build 命令
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # 打包产物的目录，Vite 默认是 dist，如果是旧版 Webpack 可能是 build
+          path: ./dist 
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
