@@ -190,6 +190,22 @@ export function getCrossLines(matrix, clickedValue, r, c) {
 
   let mainLine = [];
   let crossLine = [];
+  const touchesHorseAxis = mainLineTouchesOuterHorse21(matrix, r, c);
+
+  if (touchesHorseAxis && absDr !== absDc) {
+    if (absDr > absDc) {
+      for (let i = 0; i < size; i++) mainLine.push({ r: i, c, value: matrix[i][c] });
+      for (let j = 0; j < size; j++) crossLine.push({ r: center, c: j, value: matrix[center][j] });
+      console.log("进入2:1骑士线修正：垂直主轴逻辑");
+    } else {
+      for (let j = 0; j < size; j++) mainLine.push({ r, c: j, value: matrix[r][j] });
+      for (let i = 0; i < size; i++) crossLine.push({ r: i, c: center, value: matrix[i][center] });
+      console.log("进入2:1骑士线修正：水平主轴逻辑");
+    }
+
+    return { mainLine, crossLine };
+  }
+
   const k = absDc === 0 ? 999 : absDr / absDc;
   const isCoreSpecial = (absDr + absDc <= 4) && (absDr !== 0 && absDc !== 0);
 
@@ -224,6 +240,115 @@ export function getCrossLines(matrix, clickedValue, r, c) {
   return { mainLine, crossLine };
 }
 
+function getLayer(r, c, center) {
+  return Math.max(Math.abs(r - center), Math.abs(c - center));
+}
+
+function isHorse21Point(r, c, center) {
+  const rowDiff = r - center;
+  const colDiff = c - center;
+
+  return (
+    rowDiff === 2 * colDiff ||
+    rowDiff === -2 * colDiff ||
+    colDiff === 2 * rowDiff ||
+    colDiff === -2 * rowDiff
+  );
+}
+
+function getHorse21Points(matrix) {
+  const center = Math.floor(matrix.length / 2);
+  const points = [];
+
+  for (let r = 0; r < matrix.length; r++) {
+    for (let c = 0; c < matrix.length; c++) {
+      if (isHorse21Point(r, c, center)) {
+        points.push({ r, c, value: matrix[r][c] });
+      }
+    }
+  }
+
+  return points;
+}
+
+function mainLineTouchesOuterHorse21(matrix, r, c) {
+  const center = Math.floor(matrix.length / 2);
+  const clickLayer = getLayer(r, c, center);
+  const absRowDiff = Math.abs(r - center);
+  const absColDiff = Math.abs(c - center);
+  const majorDiff = Math.max(absRowDiff, absColDiff);
+  const minorDiff = Math.min(absRowDiff, absColDiff);
+
+  if (clickLayer <= 2) return false;
+  if (minorDiff === 0 || majorDiff <= minorDiff * 2) return false;
+
+  const horsePointSet = new Set(
+    getHorse21Points(matrix)
+      .filter(point => getLayer(point.r, point.c, center) <= 2)
+      .map(point => `${point.r}:${point.c}`)
+  );
+
+  if (r !== center) {
+    const rowStep = Math.sign(r - center);
+    for (let row = center + rowStep; row !== r + rowStep; row += rowStep) {
+      if (horsePointSet.has(`${row}:${c}`)) return true;
+    }
+  }
+
+  if (c !== center) {
+    const colStep = Math.sign(c - center);
+    for (let col = center + colStep; col !== c + colStep; col += colStep) {
+      if (horsePointSet.has(`${r}:${col}`)) return true;
+    }
+  }
+
+  return false;
+}
+
+function getAxisHorseAdjustedCrossLine(matrix, crossLinePoints, r, c, clickedValue) {
+  const center = Math.floor(matrix.length / 2);
+  const L = getLayer(r, c, center);
+
+  if (!mainLineTouchesOuterHorse21(matrix, r, c)) return null;
+
+  const isHorizontalCross = crossLinePoints.every(point => point.r === center);
+  const isVerticalCross = crossLinePoints.every(point => point.c === center);
+
+  if (isHorizontalCross && r !== center) {
+    const startCol = center + Math.sign(r - center) * L;
+    const endCol = c;
+    const minCol = Math.min(startCol, endCol);
+    const maxCol = Math.max(startCol, endCol);
+
+    console.log(`[下降模式] 2:1骑士线修正 -> 横向副线区间:(${center},${minCol}) 到 (${center},${maxCol})`);
+
+    return crossLinePoints.filter(point =>
+      point.r === center &&
+      point.c >= minCol &&
+      point.c <= maxCol &&
+      point.value < clickedValue
+    );
+  }
+
+  if (isVerticalCross && c !== center) {
+    const startRow = center + Math.sign(c - center) * L;
+    const endRow = r;
+    const minRow = Math.min(startRow, endRow);
+    const maxRow = Math.max(startRow, endRow);
+
+    console.log(`[下降模式] 2:1骑士线修正 -> 纵向副线区间:(${minRow},${center}) 到 (${maxRow},${center})`);
+
+    return crossLinePoints.filter(point =>
+      point.c === center &&
+      point.r >= minRow &&
+      point.r <= maxRow &&
+      point.value < clickedValue
+    );
+  }
+
+  return null;
+}
+
 export function getCrossLineDown(matrix, crossLinePoints, r, c) {
   const size = matrix.length;
   const center = Math.floor(size / 2);
@@ -242,6 +367,11 @@ export function getCrossLineDown(matrix, crossLinePoints, r, c) {
   const clickedValue = matrix[r][c];
   const isHorizontalCross = crossLinePoints.every(point => point.r === center);
   const isVerticalCross = crossLinePoints.every(point => point.c === center);
+  const horseAdjustedCrossLine = getAxisHorseAdjustedCrossLine(matrix, crossLinePoints, r, c, clickedValue);
+
+  if (horseAdjustedCrossLine) {
+    return horseAdjustedCrossLine;
+  }
 
   if (isHorizontalCross && r !== center) {
     const startCol = center + Math.sign(r - center) * L;
