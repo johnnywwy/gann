@@ -240,6 +240,39 @@ export function getCrossLineDown(matrix, crossLinePoints, r, c) {
   if (candidates.length === 0) return [];
 
   const clickedValue = matrix[r][c];
+  const isHorizontalCross = crossLinePoints.every(point => point.r === center);
+  const isVerticalCross = crossLinePoints.every(point => point.c === center);
+
+  if (isHorizontalCross && r !== center) {
+    const startCol = center + Math.sign(r - center) * L;
+    const endCol = c;
+    const minCol = Math.min(startCol, endCol);
+    const maxCol = Math.max(startCol, endCol);
+
+    console.log(`[下降模式] 点击(${r},${c})[${clickedValue}] -> 横向副线区间:(${center},${minCol}) 到 (${center},${maxCol})`);
+
+    return crossLinePoints.filter(point =>
+      point.r === center &&
+      point.c >= minCol &&
+      point.c <= maxCol
+    );
+  }
+
+  if (isVerticalCross && c !== center) {
+    const startRow = center + Math.sign(c - center) * L;
+    const endRow = r;
+    const minRow = Math.min(startRow, endRow);
+    const maxRow = Math.max(startRow, endRow);
+
+    console.log(`[下降模式] 点击(${r},${c})[${clickedValue}] -> 纵向副线区间:(${minRow},${center}) 到 (${maxRow},${center})`);
+
+    return crossLinePoints.filter(point =>
+      point.c === center &&
+      point.r >= minRow &&
+      point.r <= maxRow
+    );
+  }
+
   let projPoint = candidates.find(p => (p.r === r || p.c === c) && p.value < clickedValue);
 
   if (!projPoint) projPoint = candidates.find(p => p.r === r || p.c === c);
