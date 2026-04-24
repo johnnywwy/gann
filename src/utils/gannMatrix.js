@@ -254,7 +254,8 @@ export function getCrossLineDown(matrix, crossLinePoints, r, c) {
     return crossLinePoints.filter(point =>
       point.r === center &&
       point.c >= minCol &&
-      point.c <= maxCol
+      point.c <= maxCol &&
+      point.value < clickedValue
     );
   }
 
@@ -269,8 +270,37 @@ export function getCrossLineDown(matrix, crossLinePoints, r, c) {
     return crossLinePoints.filter(point =>
       point.c === center &&
       point.r >= minRow &&
-      point.r <= maxRow
+      point.r <= maxRow &&
+      point.value < clickedValue
     );
+  }
+
+  const isMainDiagonalCross = crossLinePoints.every(point => point.r - point.c === 0);
+  const isAntiDiagonalCross = crossLinePoints.every(point => point.r + point.c === center * 2);
+
+  if ((isMainDiagonalCross || isAntiDiagonalCross) && c !== center) {
+    const rowDistance = Math.abs(r - center);
+    const colDistance = Math.abs(c - center);
+    const distance = Math.max(rowDistance, colDistance);
+    const direction = isMainDiagonalCross
+      ? Math.sign(r - center)
+      : -Math.sign(c - center);
+    const targetIdx = originIdx + direction * distance;
+    const shouldExcludeCenter = isMainDiagonalCross
+      ? rowDistance > colDistance
+      : colDistance > rowDistance;
+    const startIdx = Math.min(originIdx, targetIdx) + (shouldExcludeCenter && targetIdx > originIdx ? 1 : 0);
+    const endIdx = Math.max(originIdx, targetIdx) - (shouldExcludeCenter && targetIdx < originIdx ? 1 : 0);
+    const points = crossLinePoints.slice(
+      Math.max(0, startIdx),
+      Math.min(crossLinePoints.length, endIdx + 1)
+    );
+
+    console.log(`[下降模式] 点击(${r},${c})[${clickedValue}] -> 对角副线方向: ${originIdx} 到 ${targetIdx}`);
+
+    const orderedPoints = targetIdx >= originIdx ? points : points.reverse();
+
+    return orderedPoints.filter(point => point.value < clickedValue);
   }
 
   let projPoint = candidates.find(p => (p.r === r || p.c === c) && p.value < clickedValue);
