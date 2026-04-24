@@ -206,10 +206,31 @@ export function getCrossLines(matrix, clickedValue, r, c) {
     return { mainLine, crossLine };
   }
 
-  const k = absDc === 0 ? 999 : absDr / absDc;
   const isCoreSpecial = (absDr + absDc <= 4) && (absDr !== 0 && absDc !== 0);
+  const layer = Math.max(absDr, absDc);
+  const minorAxis = Math.min(absDr, absDc);
+  const isLeftBottom = dr > 0 && dc < 0;
+  const isOuterCrossSpecial =
+    (layer === 5 && minorAxis === 3 && !isLeftBottom) ||
+    (layer === 7 && minorAxis === 4 && !(isLeftBottom && absDr > absDc));
 
-  if (!isCoreSpecial && k >= 1.75) {
+  if (!isCoreSpecial && isOuterCrossSpecial) {
+    if (absDr > absDc) {
+      for (let i = 0; i < size; i++) mainLine.push({ r: i, c, value: matrix[i][c] });
+      for (let j = 0; j < size; j++) crossLine.push({ r: center, c: j, value: matrix[center][j] });
+      console.log("进入外圈十字线修正：垂直主轴逻辑");
+    } else {
+      for (let j = 0; j < size; j++) mainLine.push({ r, c: j, value: matrix[r][j] });
+      for (let i = 0; i < size; i++) crossLine.push({ r: i, c: center, value: matrix[i][center] });
+      console.log("进入外圈十字线修正：水平主轴逻辑");
+    }
+
+    return { mainLine, crossLine };
+  }
+
+  const k = absDc === 0 ? 999 : absDr / absDc;
+
+  if (!isCoreSpecial && k > 1.75) {
     for (let i = 0; i < size; i++) mainLine.push({ r: i, c, value: matrix[i][c] });
     for (let j = 0; j < size; j++) crossLine.push({ r: center, c: j, value: matrix[center][j] });
     console.log("进入垂直主轴逻辑");
@@ -331,7 +352,7 @@ function getAxisHorseAdjustedCrossLine(matrix, crossLinePoints, r, c, clickedVal
   }
 
   if (isVerticalCross && c !== center) {
-    const startRow = center + Math.sign(c - center) * L;
+    const startRow = center - Math.sign(c - center) * L;
     const endRow = r;
     const minRow = Math.min(startRow, endRow);
     const maxRow = Math.max(startRow, endRow);
@@ -390,7 +411,7 @@ export function getCrossLineDown(matrix, crossLinePoints, r, c) {
   }
 
   if (isVerticalCross && c !== center) {
-    const startRow = center + Math.sign(c - center) * L;
+    const startRow = center - Math.sign(c - center) * L;
     const endRow = r;
     const minRow = Math.min(startRow, endRow);
     const maxRow = Math.max(startRow, endRow);
@@ -412,9 +433,10 @@ export function getCrossLineDown(matrix, crossLinePoints, r, c) {
     const rowDistance = Math.abs(r - center);
     const colDistance = Math.abs(c - center);
     const distance = Math.max(rowDistance, colDistance);
-    const direction = isMainDiagonalCross
-      ? Math.sign(r - center)
-      : -Math.sign(c - center);
+    const isFlatHorseSide = distance > 2 && colDistance >= rowDistance * 2;
+    const direction = isFlatHorseSide
+      ? Math.sign(c - center)
+      : (isMainDiagonalCross ? Math.sign(r - center) : -Math.sign(c - center));
     const targetIdx = originIdx + direction * distance;
     const shouldExcludeCenter = isMainDiagonalCross
       ? rowDistance > colDistance
