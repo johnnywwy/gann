@@ -1,5 +1,56 @@
 <template>
   <main class="board-panel">
+    <section class="trend-panel">
+      <div class="section-heading">
+        <h2>趋势模式</h2>
+        <p>切换点击后的分析方向与高亮颜色。</p>
+      </div>
+
+      <div class="trend-layout">
+        <div class="toggle-card mode-card">
+          <div>
+            <strong>启用点击计算</strong>
+            <p>关闭后矩阵只展示，不计算趋势主副线。</p>
+          </div>
+          <el-switch v-model="form.modeEnabled" />
+        </div>
+
+        <div v-if="form.modeEnabled" class="trend-switcher">
+          <button
+            type="button"
+            class="trend-button"
+            :class="{ active: form.trendDirection === 'up', up: true }"
+            @click="form.trendDirection = 'up'"
+          >
+            ↑ 上升
+          </button>
+          <button
+            type="button"
+            class="trend-button"
+            :class="{ active: form.trendDirection === 'down', down: true }"
+            @click="form.trendDirection = 'down'"
+          >
+            ↓ 下降
+          </button>
+        </div>
+
+        <div class="legend-grid">
+          <div class="legend-item">
+            <span class="legend-dot selected-dot"></span>
+            <span>选中点</span>
+          </div>
+          <div class="legend-item">
+            <span class="legend-dot trend-dot"></span>
+            <span>趋势点</span>
+          </div>
+          <div class="legend-item">
+            <span class="legend-dot search-dot"></span>
+            <span>搜索命中</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <section class="matrix-panel">
       <div class="matrix-scroll">
         <div class="matrix-wrapper" v-if="matrix.length">
@@ -144,6 +195,15 @@ defineProps({
     type: Boolean,
     required: true,
   },
+  trendDirectionLabel: {
+    type: String,
+    required: false,
+    default: "",
+  },
+  trendPalette: {
+    type: Object,
+    required: true,
+  },
   getCellStyle: {
     type: Function,
     required: true,
@@ -159,15 +219,137 @@ defineEmits(["cell-click"]);
 
 <style scoped>
 .board-panel {
-  display: block;
+  display: grid;
+  gap: 12px;
 }
 
+.trend-panel,
 .matrix-panel {
-  padding: 14px;
   border: 1px solid rgba(34, 44, 74, 0.08);
   border-radius: 24px;
   background: rgba(255, 255, 255, 0.92);
   box-shadow: 0 16px 40px rgba(30, 57, 102, 0.08);
+}
+
+.trend-panel {
+  padding: 14px 16px;
+}
+
+.section-heading {
+  margin-bottom: 10px;
+}
+
+.section-heading h2 {
+  margin: 0 0 4px;
+  font-size: 18px;
+}
+
+.section-heading p {
+  margin: 0;
+  color: #607090;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.trend-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.1fr) minmax(180px, 0.9fr) minmax(220px, 1fr);
+  gap: 10px;
+  align-items: stretch;
+}
+
+.toggle-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 68px;
+  padding: 12px 14px;
+  border: 1px solid rgba(34, 44, 74, 0.08);
+  border-radius: 16px;
+  background: #f9fbff;
+  box-sizing: border-box;
+}
+
+.toggle-card strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.toggle-card p {
+  margin: 0;
+  color: #607090;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.trend-switcher {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.trend-button {
+  min-height: 68px;
+  border: 1px solid rgba(34, 44, 74, 0.12);
+  border-radius: 14px;
+  background: #f4f7fb;
+  color: #42506a;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.trend-button.active.up {
+  border-color: rgba(24, 163, 110, 0.22);
+  background: rgba(45, 255, 142, 0.18);
+  color: #0f7c56;
+}
+
+.trend-button.active.down {
+  border-color: rgba(217, 72, 95, 0.22);
+  background: rgba(255, 142, 142, 0.2);
+  color: #b0293d;
+}
+
+.legend-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 14px;
+  background: #f6f9fd;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.legend-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+}
+
+.selected-dot {
+  background: v-bind('trendPalette.selected');
+}
+
+.trend-dot {
+  background: v-bind('trendPalette.trend');
+}
+
+.search-dot {
+  background: #ff7a00;
+}
+
+.matrix-panel {
+  padding: 14px;
 }
 
 .matrix-scroll {
@@ -177,8 +359,8 @@ defineEmits(["cell-click"]);
 
 .matrix-wrapper {
   position: relative;
-  display: table;
-  margin: 0 auto;
+  display: inline-block;
+  margin: 0;
   padding: 6px;
 }
 
@@ -222,13 +404,13 @@ defineEmits(["cell-click"]);
 }
 
 .cell-value {
-  font-size: 15px;
+  font-size: var(--cell-value-size, 15px);
   font-weight: 700;
   line-height: 1;
 }
 
 .cell-coord {
-  font-size: 10px;
+  font-size: var(--cell-coord-size, 10px);
   color: #42506a;
   line-height: 1;
 }
@@ -255,6 +437,13 @@ defineEmits(["cell-click"]);
 }
 
 @media (max-width: 860px) {
+  .trend-layout,
+  .trend-switcher,
+  .legend-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .trend-panel,
   .matrix-panel {
     padding: 12px;
     border-radius: 18px;

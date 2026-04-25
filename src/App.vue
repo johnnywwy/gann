@@ -9,7 +9,6 @@
         :search-number="searchNumber"
         :selected-value-label="selectedValueLabel"
         :highlight-label="highlightLabel"
-        :trend-palette="trendPalette"
         @generate="generateMatrix"
         @highlight="highlightNumber"
         @update:search-number="searchNumber = $event"
@@ -25,6 +24,8 @@
         :horse-line-flat-coords="horseLineFlatCoords"
         :mid="mid"
         :mode-enabled="form.modeEnabled"
+        :trend-direction-label="trendDirectionLabel"
+        :trend-palette="trendPalette"
         :get-cell-style="getCellStyle"
         :get-cell-class="getCellClass"
         @cell-click="handleCellClick"
@@ -53,14 +54,16 @@ const form = reactive({
   base: 1,
   step: 1,
   loop: 9,
-  cellScale: 100,
+  cellScale: 75,
+  trendOpacity: 36,
+  fontScale: 100,
   showDiagonal: true,
   showCross: true,
   modeEnabled: true,
   trendDirection: "down",
   showHorseLine: true,
   showHorseLineFlat: true,
-  showCoords: true,
+  showCoords: false,
 });
 
 const matrix = ref([]);
@@ -79,9 +82,10 @@ const cellSize = computed(() => {
   const availableWidth = Math.max(320, viewportWidth.value - shellPadding - controlWidth);
   const availableHeight = Math.max(320, viewportHeight.value - 120);
   const boardSpace = Math.min(availableWidth, availableHeight);
-  const size = Math.floor((boardSpace / matrix.value.length) * (form.cellScale / 100));
+  const autoSize = Math.floor(boardSpace / matrix.value.length);
+  const size = Math.floor(autoSize * (form.cellScale / 100));
 
-  return Math.max(18, Math.min(56, size));
+  return Math.max(12, size);
 });
 
 /**
@@ -101,16 +105,18 @@ const displayOptions = [
  * 上升沿用当前配色，下降时反转两者的高亮颜色。
  */
 const trendPalette = computed(() => {
+  const alpha = Math.max(0.12, Math.min(0.85, form.trendOpacity / 100));
+
   if (form.trendDirection === "down") {
     return {
-      selected: "#ff8e8e",
-      trend: "#2dff8e",
+      selected: `rgba(255, 142, 142, ${alpha})`,
+      trend: `rgba(45, 255, 142, ${alpha})`,
     };
   }
 
   return {
-    selected: "#2dff8e",
-    trend: "#ff8e8e",
+    selected: `rgba(45, 255, 142, ${alpha})`,
+    trend: `rgba(255, 142, 142, ${alpha})`,
   };
 });
 
@@ -202,6 +208,8 @@ function getCellStyle(r, c) {
     height: `${cellSize.value}px`,
     backgroundColor,
     border,
+    "--cell-value-size": `${Math.max(11, Math.round((cellSize.value * 0.3 * form.fontScale) / 100))}px`,
+    "--cell-coord-size": `${Math.max(8, Math.round((cellSize.value * 0.18 * form.fontScale) / 100))}px`,
     cursor: form.modeEnabled ? "pointer" : "default",
   };
 }
