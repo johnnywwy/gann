@@ -63,6 +63,7 @@
               :y2="totalSize"
               stroke="#2d6cdf"
               stroke-width="2"
+              :stroke-opacity="form.lineOpacity / 100"
             />
             <line
               v-if="form.showCross"
@@ -72,6 +73,7 @@
               :y2="centerPx"
               stroke="#2d6cdf"
               stroke-width="2"
+              :stroke-opacity="form.lineOpacity / 100"
             />
 
             <line
@@ -82,6 +84,7 @@
               :y2="totalSize"
               stroke="#d9485f"
               stroke-width="2"
+              :stroke-opacity="form.lineOpacity / 100"
             />
             <line
               v-if="form.showDiagonal"
@@ -91,9 +94,10 @@
               :y2="totalSize"
               stroke="#d9485f"
               stroke-width="2"
+              :stroke-opacity="form.lineOpacity / 100"
             />
 
-            <g v-if="form.showHorseLine && horseLineCoords">
+            <g v-if="form.showHorseLine && horseLineCoords" :opacity="form.lineOpacity / 100">
               <line
                 :x1="horseLineCoords.x1"
                 :y1="horseLineCoords.y1"
@@ -114,7 +118,7 @@
               />
             </g>
 
-            <g v-if="form.showHorseLineFlat && horseLineFlatCoords">
+            <g v-if="form.showHorseLineFlat && horseLineFlatCoords" :opacity="form.lineOpacity / 100">
               <line
                 :x1="horseLineFlatCoords.x1"
                 :y1="horseLineFlatCoords.y1"

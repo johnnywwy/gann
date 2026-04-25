@@ -32,10 +32,10 @@
 
         <div class="field-card slider-card">
           <div class="slider-head">
-            <span class="field-label">透明度</span>
-            <strong>{{ form.trendOpacity }}%</strong>
+            <span class="field-label">线条透明度</span>
+            <strong>{{ form.lineOpacity }}%</strong>
           </div>
-          <el-slider v-model="form.trendOpacity" :min="10" :max="85" :step="5" />
+          <el-slider v-model="form.lineOpacity" :min="10" :max="85" :step="5" />
         </div>
 
         <div class="field-card slider-card">

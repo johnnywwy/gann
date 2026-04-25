@@ -55,7 +55,7 @@ const form = reactive({
   step: 1,
   loop: 9,
   cellScale: 75,
-  trendOpacity: 36,
+  lineOpacity: 36,
   fontScale: 100,
   showDiagonal: true,
   showCross: true,
@@ -105,18 +105,16 @@ const displayOptions = [
  * 上升沿用当前配色，下降时反转两者的高亮颜色。
  */
 const trendPalette = computed(() => {
-  const alpha = Math.max(0.12, Math.min(0.85, form.trendOpacity / 100));
-
   if (form.trendDirection === "down") {
     return {
-      selected: `rgba(255, 142, 142, ${alpha})`,
-      trend: `rgba(45, 255, 142, ${alpha})`,
+      selected: "rgba(255, 142, 142, 0.34)",
+      trend: "rgba(45, 255, 142, 0.34)",
     };
   }
 
   return {
-    selected: `rgba(45, 255, 142, ${alpha})`,
-    trend: `rgba(255, 142, 142, ${alpha})`,
+    selected: "rgba(45, 255, 142, 0.34)",
+    trend: "rgba(255, 142, 142, 0.34)",
   };
 });
 
