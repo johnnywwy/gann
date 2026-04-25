@@ -370,6 +370,171 @@ function getAxisHorseAdjustedCrossLine(matrix, crossLinePoints, r, c, clickedVal
   return null;
 }
 
+function getCrossLineDirectionTarget(matrix, crossLinePoints, r, c) {
+  const center = Math.floor(matrix.length / 2);
+  const originIdx = crossLinePoints.findIndex(x => x.value === 1);
+  const L = getLayer(r, c, center);
+  const isHorizontalCross = crossLinePoints.every(point => point.r === center);
+  const isVerticalCross = crossLinePoints.every(point => point.c === center);
+  const isMainDiagonalCross = crossLinePoints.every(point => point.r - point.c === 0);
+  const isAntiDiagonalCross = crossLinePoints.every(point => point.r + point.c === center * 2);
+
+  if (originIdx === -1 || L === 0) return null;
+
+  if (isHorizontalCross && r !== center) {
+    const targetCol = c === center
+      ? center + Math.sign(r - center) * L
+      : c;
+    const targetPoint = crossLinePoints.find(point =>
+      point.r === center &&
+      point.c === targetCol
+    );
+
+    return targetPoint
+      ? { targetIdx: crossLinePoints.indexOf(targetPoint), shouldExcludeCenter: false }
+      : null;
+  }
+
+  if (isVerticalCross && c !== center) {
+    const targetRow = center - Math.sign(c - center) * L;
+    const targetPoint = crossLinePoints.find(point =>
+      point.r === targetRow &&
+      point.c === center
+    );
+
+    return targetPoint
+      ? { targetIdx: crossLinePoints.indexOf(targetPoint), shouldExcludeCenter: false }
+      : null;
+  }
+
+  if ((isMainDiagonalCross || isAntiDiagonalCross) && c !== center) {
+    const rowDistance = Math.abs(r - center);
+    const colDistance = Math.abs(c - center);
+    const distance = Math.max(rowDistance, colDistance);
+    const isFlatHorseSide = distance > 2 && colDistance >= rowDistance * 2;
+    const direction = isFlatHorseSide
+      ? Math.sign(c - center)
+      : (isMainDiagonalCross ? Math.sign(r - center) : -Math.sign(c - center));
+    const shouldExcludeCenter = isMainDiagonalCross
+      ? rowDistance > colDistance
+      : colDistance > rowDistance;
+
+    return {
+      targetIdx: originIdx + direction * distance,
+      shouldExcludeCenter,
+    };
+  }
+
+  return null;
+}
+
+function sliceCrossLineFromCenter(crossLinePoints, targetIdx, shouldExcludeCenter) {
+  const originIdx = crossLinePoints.findIndex(x => x.value === 1);
+  const startIdx = Math.min(originIdx, targetIdx) + (shouldExcludeCenter && targetIdx > originIdx ? 1 : 0);
+  const endIdx = Math.max(originIdx, targetIdx) - (shouldExcludeCenter && targetIdx < originIdx ? 1 : 0);
+  const points = crossLinePoints.slice(
+    Math.max(0, startIdx),
+    Math.min(crossLinePoints.length, endIdx + 1)
+  );
+
+  return targetIdx >= originIdx ? points : points.reverse();
+}
+
+function getCrossLineDownBounds(matrix, crossLinePoints, r, c) {
+  const center = Math.floor(matrix.length / 2);
+  const originIdx = crossLinePoints.findIndex(x => x.value === 1);
+  const L = getLayer(r, c, center);
+  const isHorizontalCross = crossLinePoints.every(point => point.r === center);
+  const isVerticalCross = crossLinePoints.every(point => point.c === center);
+  const directionTarget = getCrossLineDirectionTarget(matrix, crossLinePoints, r, c);
+
+  if (originIdx === -1 || L === 0) return null;
+
+  if (isHorizontalCross && r !== center) {
+    const startCol = center + Math.sign(r - center) * L;
+    const endCol = c;
+
+    return {
+      startIdx: Math.min(startCol, endCol),
+      endIdx: Math.max(startCol, endCol),
+      excludeOriginOnUp: c !== center,
+    };
+  }
+
+  if (isVerticalCross && c !== center) {
+    const startRow = center - Math.sign(c - center) * L;
+    const endRow = r;
+
+    return {
+      startIdx: Math.min(startRow, endRow),
+      endIdx: Math.max(startRow, endRow),
+      excludeOriginOnUp: r !== center,
+    };
+  }
+
+  if (directionTarget) {
+    return {
+      startIdx: Math.min(originIdx, directionTarget.targetIdx),
+      endIdx: Math.max(originIdx, directionTarget.targetIdx),
+      shouldExcludeCenter: directionTarget.shouldExcludeCenter,
+    };
+  }
+
+  return null;
+}
+
+function getCrossLineUpFromDownBounds(crossLinePoints, downBounds) {
+  const originIdx = crossLinePoints.findIndex(x => x.value === 1);
+  if (originIdx === -1 || !downBounds) return [];
+
+  const leftDistance = Math.max(0, originIdx - downBounds.startIdx);
+  const rightDistance = Math.max(0, downBounds.endIdx - originIdx);
+  const downSign = leftDistance > rightDistance ? -1 : 1;
+  const farDistance = Math.max(leftDistance, rightDistance);
+  const nearIdx = originIdx + downSign;
+  const mirrorFarIdx = originIdx - downSign * farDistance;
+  const startIdx = Math.max(0, Math.min(nearIdx, mirrorFarIdx));
+  const endIdx = Math.min(crossLinePoints.length - 1, Math.max(nearIdx, mirrorFarIdx));
+  const result = [];
+
+  for (let idx = startIdx; idx <= endIdx; idx++) {
+    if (!downBounds.excludeOriginOnUp || idx !== originIdx) {
+      result.push(crossLinePoints[idx]);
+    }
+  }
+
+  return result;
+}
+
+function getCrossLineProjectionIndex(matrix, crossLinePoints, r, c) {
+  const center = Math.floor(matrix.length / 2);
+  const isHorizontalCross = crossLinePoints.every(point => point.r === center);
+  const isVerticalCross = crossLinePoints.every(point => point.c === center);
+  const isMainDiagonalCross = crossLinePoints.every(point => point.r - point.c === 0);
+  const isAntiDiagonalCross = crossLinePoints.every(point => point.r + point.c === center * 2);
+
+  let projectionPoint = null;
+
+  if (isHorizontalCross) {
+    projectionPoint = crossLinePoints.find(point => point.c === c);
+  } else if (isVerticalCross) {
+    projectionPoint = crossLinePoints.find(point => point.r === r);
+  } else if (isMainDiagonalCross || isAntiDiagonalCross) {
+    const clickIsOnCrossLine = crossLinePoints.some(point => point.r === r && point.c === c);
+    if (clickIsOnCrossLine) {
+      return crossLinePoints.findIndex(point => point.value === 1);
+    }
+
+    const targetLayer = getLayer(r, c, center);
+    projectionPoint = crossLinePoints.find(point =>
+      getLayer(point.r, point.c, center) === targetLayer &&
+      (point.r === r || point.c === c)
+    );
+  }
+
+  return projectionPoint ? crossLinePoints.indexOf(projectionPoint) : -1;
+}
+
 export function getCrossLineDown(matrix, crossLinePoints, r, c) {
   const size = matrix.length;
   const center = Math.floor(size / 2);
@@ -426,31 +591,16 @@ export function getCrossLineDown(matrix, crossLinePoints, r, c) {
     );
   }
 
-  const isMainDiagonalCross = crossLinePoints.every(point => point.r - point.c === 0);
-  const isAntiDiagonalCross = crossLinePoints.every(point => point.r + point.c === center * 2);
+  const directionTarget = getCrossLineDirectionTarget(matrix, crossLinePoints, r, c);
 
-  if ((isMainDiagonalCross || isAntiDiagonalCross) && c !== center) {
-    const rowDistance = Math.abs(r - center);
-    const colDistance = Math.abs(c - center);
-    const distance = Math.max(rowDistance, colDistance);
-    const isFlatHorseSide = distance > 2 && colDistance >= rowDistance * 2;
-    const direction = isFlatHorseSide
-      ? Math.sign(c - center)
-      : (isMainDiagonalCross ? Math.sign(r - center) : -Math.sign(c - center));
-    const targetIdx = originIdx + direction * distance;
-    const shouldExcludeCenter = isMainDiagonalCross
-      ? rowDistance > colDistance
-      : colDistance > rowDistance;
-    const startIdx = Math.min(originIdx, targetIdx) + (shouldExcludeCenter && targetIdx > originIdx ? 1 : 0);
-    const endIdx = Math.max(originIdx, targetIdx) - (shouldExcludeCenter && targetIdx < originIdx ? 1 : 0);
-    const points = crossLinePoints.slice(
-      Math.max(0, startIdx),
-      Math.min(crossLinePoints.length, endIdx + 1)
+  if (directionTarget) {
+    const orderedPoints = sliceCrossLineFromCenter(
+      crossLinePoints,
+      directionTarget.targetIdx,
+      directionTarget.shouldExcludeCenter
     );
 
-    console.log(`[下降模式] 点击(${r},${c})[${clickedValue}] -> 对角副线方向: ${originIdx} 到 ${targetIdx}`);
-
-    const orderedPoints = targetIdx >= originIdx ? points : points.reverse();
+    console.log(`[下降模式] 点击(${r},${c})[${clickedValue}] -> 副线方向: ${originIdx} 到 ${directionTarget.targetIdx}`);
 
     return orderedPoints.filter(point => point.value < clickedValue);
   }
@@ -481,61 +631,157 @@ export function getCrossLineDown(matrix, crossLinePoints, r, c) {
   );
 }
 
-export function getMainLineUp(mainLine, clickedValue) {
-  const originIndex = mainLine.findIndex(x => x.value === 1);
+export function getMainLineUp(matrix, mainLine, clickedValue) {
+  const center = Math.floor(matrix.length / 2);
   const clickIndex = mainLine.findIndex(x => x.value === clickedValue);
 
-  if (originIndex === -1 || clickIndex === -1) return [];
+  if (clickIndex === -1) return [];
 
-  const distance = Math.abs(clickIndex - originIndex);
-  const leftBound = originIndex - distance;
-  const rightBound = originIndex + distance;
-  let start;
-  let end;
+  const originIndex = mainLine.reduce((bestIndex, point, index) => {
+    const bestPoint = mainLine[bestIndex];
+    const pointLayer = getLayer(point.r, point.c, center);
+    const bestLayer = getLayer(bestPoint.r, bestPoint.c, center);
 
-  if (clickIndex < originIndex) {
-    start = leftBound + 1;
-    end = rightBound;
-  } else {
-    start = leftBound - 1;
-    end = rightBound - 1;
+    if (pointLayer !== bestLayer) {
+      return pointLayer < bestLayer ? index : bestIndex;
+    }
+
+    return Math.abs(index - clickIndex) > Math.abs(bestIndex - clickIndex)
+      ? index
+      : bestIndex;
+  }, 0);
+
+  const step = clickIndex < originIndex ? 1 : -1;
+  const result = [];
+
+  for (
+    let index = clickIndex + step;
+    index >= 0 && index < mainLine.length;
+    index += step
+  ) {
+    const point = mainLine[index];
+    result.push(point);
+
+    if (point.value > clickedValue) {
+      break;
+    }
   }
 
-  return mainLine.slice(Math.max(0, start), Math.min(mainLine.length, end + 1));
+  return result;
 }
 
-export function getCrossLineUp(crossLinePoints, r, c) {
+export function getCrossLineUp(matrix, crossLinePoints, r, c) {
   if (!Array.isArray(crossLinePoints) || crossLinePoints.length === 0) return [];
 
   const originIndex = crossLinePoints.findIndex(x => x.value === 1);
   if (originIndex === -1) return [];
 
-  let start;
-  let end;
+  const center = Math.floor(matrix.length / 2);
+  const L = getLayer(r, c, center);
+  const isHorizontalCross = crossLinePoints.every(point => point.r === center);
+  const isVerticalCross = crossLinePoints.every(point => point.c === center);
+  const isMainDiagonalCross = crossLinePoints.every(point => point.r - point.c === 0);
+  const isAntiDiagonalCross = crossLinePoints.every(point => point.r + point.c === center * 2);
 
-  if (r < c) {
-    start = originIndex + 1;
-    end = c;
-    console.log("start end===>", start, end);
-  } else if (r > c) {
-    const diff = r - originIndex;
-    start = originIndex - diff - 1;
-    end = originIndex;
-  } else if (r < originIndex) {
-    start = r;
-    end = originIndex - 1;
-  } else if (r > originIndex) {
-    const diff = r - originIndex;
-    start = originIndex;
-    end = originIndex + diff;
-  } else {
-    return [crossLinePoints[originIndex]];
+  if ((isMainDiagonalCross || isAntiDiagonalCross) && c !== center) {
+    const rowDistance = Math.abs(r - center);
+    const colDistance = Math.abs(c - center);
+    const clickedValue = matrix[r][c];
+    const direction = Math.sign(c - center);
+    let targetIdx = originIndex + direction * L;
+
+    targetIdx = Math.max(0, Math.min(crossLinePoints.length - 1, targetIdx));
+
+    while (
+      targetIdx + direction >= 0 &&
+      targetIdx + direction < crossLinePoints.length &&
+      crossLinePoints[targetIdx].value <= clickedValue
+    ) {
+      targetIdx += direction;
+    }
+
+    const shouldExcludeCenter = isMainDiagonalCross
+      ? colDistance > rowDistance
+      : rowDistance > colDistance;
+    const startIdx = Math.min(originIndex, targetIdx) + (shouldExcludeCenter && targetIdx > originIndex ? 1 : 0);
+    const endIdx = Math.max(originIndex, targetIdx) - (shouldExcludeCenter && targetIdx < originIndex ? 1 : 0);
+
+    return crossLinePoints.slice(
+      Math.max(0, startIdx),
+      Math.min(crossLinePoints.length, endIdx + 1)
+    );
   }
 
-  return crossLinePoints.slice(
-    Math.max(0, start),
-    Math.min(crossLinePoints.length, end + 1)
-  );
+  if (isHorizontalCross && r !== center) {
+    const clickedValue = matrix[r][c];
+    const nearIdx = c;
+    const direction = -Math.sign(r - center);
+    let targetIdx = nearIdx;
+
+    targetIdx = Math.max(0, Math.min(crossLinePoints.length - 1, targetIdx));
+
+    while (
+      targetIdx + direction >= 0 &&
+      targetIdx + direction < crossLinePoints.length &&
+      crossLinePoints[targetIdx].value <= clickedValue
+    ) {
+      targetIdx += direction;
+    }
+
+    const startIdx = Math.min(nearIdx, targetIdx);
+    const endIdx = Math.max(nearIdx, targetIdx);
+
+    return crossLinePoints.slice(
+      Math.max(0, startIdx),
+      Math.min(crossLinePoints.length, endIdx + 1)
+    );
+  }
+
+  if (isVerticalCross && c !== center) {
+    const clickedValue = matrix[r][c];
+    const nearIdx = r;
+    const direction = Math.sign(c - center);
+    let targetIdx = nearIdx;
+
+    targetIdx = Math.max(0, Math.min(crossLinePoints.length - 1, targetIdx));
+
+    while (
+      targetIdx + direction >= 0 &&
+      targetIdx + direction < crossLinePoints.length &&
+      crossLinePoints[targetIdx].value <= clickedValue
+    ) {
+      targetIdx += direction;
+    }
+
+    const startIdx = Math.min(nearIdx, targetIdx);
+    const endIdx = Math.max(nearIdx, targetIdx);
+
+    return crossLinePoints.slice(
+      Math.max(0, startIdx),
+      Math.min(crossLinePoints.length, endIdx + 1)
+    );
+  }
+
+  const downBounds = getCrossLineDownBounds(matrix, crossLinePoints, r, c);
+  const projectionIdx = getCrossLineProjectionIndex(matrix, crossLinePoints, r, c);
+
+  if (projectionIdx !== -1 && downBounds) {
+    const leftDistance = Math.max(0, originIndex - downBounds.startIdx);
+    const rightDistance = Math.max(0, downBounds.endIdx - originIndex);
+    const downSign = leftDistance > rightDistance ? -1 : 1;
+    const farDistance = Math.max(leftDistance, rightDistance);
+    const targetIdx = originIndex - downSign * farDistance;
+    const startIdx = Math.max(0, Math.min(projectionIdx, targetIdx));
+    const endIdx = Math.min(crossLinePoints.length - 1, Math.max(projectionIdx, targetIdx));
+
+    return crossLinePoints.slice(startIdx, endIdx + 1);
+  }
+
+  const orderedPoints = getCrossLineUpFromDownBounds(crossLinePoints, downBounds);
+
+  console.log(`[上升模式] 点击(${r},${c})[${matrix[r][c]}] -> 反向副线区间`);
+
+  return orderedPoints;
 }
 
 export function getPointsFromMatrix(matrix, values) {
@@ -589,8 +835,8 @@ export function calculateClickTrend(matrix, r, c, trendDirection) {
   }
 
   if (trendDirection === "up") {
-    trendMain = getMainLineUp(mainLine, clickedValue);
-    trendCross = getCrossLineUp(crossLinePoints, r, c);
+    trendMain = getMainLineUp(matrix, mainLine, clickedValue);
+    trendCross = getCrossLineUp(matrix, crossLinePoints, r, c);
   }
 
   return {
