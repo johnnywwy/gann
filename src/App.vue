@@ -1,110 +1,43 @@
 <template>
-  <el-card class="box-card">
-    <el-form :model="form" label-width="100px" class="form">
-      <el-form-item label="中心基数">
-        <el-input-number v-model="form.base" :min="1" />
-      </el-form-item>
+  <div class="app-shell">
+    <AppHero />
 
-      <el-form-item label="步进">
-        <el-input-number v-model="form.step" />
-      </el-form-item>
+    <div class="workspace-grid">
+      <ControlPanel
+        :form="form"
+        :display-options="displayOptions"
+        :search-number="searchNumber"
+        :selected-value-label="selectedValueLabel"
+        :highlight-label="highlightLabel"
+        :trend-palette="trendPalette"
+        @generate="generateMatrix"
+        @highlight="highlightNumber"
+        @update:search-number="searchNumber = $event"
+      />
 
-      <el-form-item label="循环次数">
-        <el-input-number v-model="form.loop" :min="1" />
-      </el-form-item>
-
-      <el-form-item label="画角线">
-        <el-switch v-model="form.showDiagonal" />
-      </el-form-item>
-
-      <el-form-item label="画十字线">
-        <el-switch v-model="form.showCross" />
-      </el-form-item>
-
-      <el-form-item label="2:1 骑士线">
-        <el-switch v-model="form.showHorseLine" />
-      </el-form-item>
-
-      <el-form-item label="1:2 骑士线">
-        <el-switch v-model="form.showHorseLineFlat" />
-      </el-form-item>
-
-      <el-form-item label="搜索数字">
-        <el-input-number v-model="searchNumber" :min="1" />
-        <el-button type="primary" @click="highlightNumber">搜索</el-button>
-      </el-form-item>
-
-      <el-form-item>
-        <el-button type="primary" @click="generateMatrix">
-          生成九方图
-        </el-button>
-      </el-form-item>
-
-      <el-form-item label="模式">
-        <el-switch v-model="form.modeEnabled" />
-      </el-form-item>
-
-      <!-- 只有模式开启才显示 -->
-      <el-form-item v-if="form.modeEnabled" label="方向">
-        <el-button-group>
-          <el-button :type="form.trendDirection === 'up' ? 'primary' : 'default'" @click="form.trendDirection = 'up'">
-            ↑ 上升
-          </el-button>
-
-          <el-button :type="form.trendDirection === 'down' ? 'primary' : 'default'"
-            @click="form.trendDirection = 'down'">
-            ↓ 下降
-          </el-button>
-        </el-button-group>
-      </el-form-item>
-    </el-form>
-
-    <div class="matrix-wrapper" v-if="matrix.length">
-      <!-- 整体SVG覆盖整个矩阵 -->
-      <svg class="matrix-overlay" :width="matrix.length * cellSize" :height="matrix.length * cellSize">
-        <!-- 十字线 -->
-        <line v-if="form.showCross" :x1="centerPx" y1="0" :x2="centerPx" :y2="totalSize" stroke="#00BFFF"
-          stroke-width="2" />
-        <line v-if="form.showCross" x1="0" :y1="centerPx" :x2="totalSize" :y2="centerPx" stroke="#00BFFF"
-          stroke-width="2" />
-
-        <!-- 对角线 -->
-        <line v-if="form.showDiagonal" x1="0" y1="0" :x2="totalSize" :y2="totalSize" stroke="#FF5252"
-          stroke-width="2" />
-        <line v-if="form.showDiagonal" :x1="totalSize" y1="0" x2="0" :y2="totalSize" stroke="#FF5252"
-          stroke-width="2" />
-
-        <g v-if="form.showHorseLine && horseLineCoords">
-          <line :x1="horseLineCoords.x1" :y1="horseLineCoords.y1" :x2="horseLineCoords.x2" :y2="horseLineCoords.y2"
-            stroke="#9C27B0" stroke-width="2" stroke-dasharray="8,4" />
-          <line :x1="totalSize - horseLineCoords.x1" :y1="horseLineCoords.y1" :x2="totalSize - horseLineCoords.x2"
-            :y2="horseLineCoords.y2" stroke="#9C27B0" stroke-width="2" stroke-dasharray="8,4" />
-        </g>
-
-        <g v-if="form.showHorseLineFlat && horseLineFlatCoords">
-          <line :x1="horseLineFlatCoords.x1" :y1="horseLineFlatCoords.y1" :x2="horseLineFlatCoords.x2"
-            :y2="horseLineFlatCoords.y2" stroke="#2E7D32" stroke-width="2" stroke-dasharray="8,4" />
-          <line :x1="horseLineFlatCoords.x1" :y1="totalSize - horseLineFlatCoords.y1" :x2="horseLineFlatCoords.x2"
-            :y2="totalSize - horseLineFlatCoords.y2" stroke="#2E7D32" stroke-width="2" stroke-dasharray="8,4" />
-        </g>
-      </svg>
-
-      <!-- 矩阵 -->
-      <div class="matrix">
-        <div v-for="(row, rIndex) in matrix" :key="rIndex" class="row">
-          <div v-for="(cell, cIndex) in row" :key="cIndex" class="cell" :style="getCellStyle(rIndex, cIndex)"
-            @click="handleCellClick(rIndex, cIndex)">
-            <div>{{ cell }}</div>
-            <div style="font-size: 10px;">{{ (rIndex) + ':' + (cIndex) }}</div>
-          </div>
-        </div>
-      </div>
+      <MatrixBoard
+        :matrix="matrix"
+        :form="form"
+        :cell-size="cellSize"
+        :center-px="centerPx"
+        :total-size="totalSize"
+        :horse-line-coords="horseLineCoords"
+        :horse-line-flat-coords="horseLineFlatCoords"
+        :mid="mid"
+        :mode-enabled="form.modeEnabled"
+        :get-cell-style="getCellStyle"
+        :get-cell-class="getCellClass"
+        @cell-click="handleCellClick"
+      />
     </div>
-  </el-card>
+  </div>
 </template>
 
 <script setup>
-import { reactive, ref, computed } from "vue";
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
+import AppHero from "./components/AppHero.vue";
+import ControlPanel from "./components/ControlPanel.vue";
+import MatrixBoard from "./components/MatrixBoard.vue";
 import {
   calculateClickTrend,
   findNumberPosition,
@@ -112,16 +45,22 @@ import {
   getLineCoordsBySlope,
 } from "./utils/gannMatrix";
 
+/**
+ * 页面上的核心配置项。
+ * 统一放在一个 reactive 对象里，便于后续扩展和保存配置。
+ */
 const form = reactive({
   base: 1,
   step: 1,
   loop: 9,
+  cellScale: 100,
   showDiagonal: true,
   showCross: true,
   modeEnabled: true,
-  trendDirection: "down", // up / down
-  showHorseLine: true, // 骑士线开关
-  showHorseLineFlat: true, // 扁平骑士线
+  trendDirection: "down",
+  showHorseLine: true,
+  showHorseLineFlat: true,
+  showCoords: true,
 });
 
 const matrix = ref([]);
@@ -129,14 +68,77 @@ const selectedCell = ref(null);
 const trendCells = ref([]);
 const searchNumber = ref(null);
 const highlightPos = ref({ r: -1, c: -1 });
+const viewportWidth = ref(typeof window === "undefined" ? 1440 : window.innerWidth);
+const viewportHeight = ref(typeof window === "undefined" ? 900 : window.innerHeight);
 
-const cellSize = 50;
-const totalSize = computed(() => matrix.value.length * cellSize);
+const cellSize = computed(() => {
+  if (!matrix.value.length) return 40;
+
+  const shellPadding = viewportWidth.value <= 860 ? 24 : 36;
+  const controlWidth = viewportWidth.value > 1180 ? 308 : 0;
+  const availableWidth = Math.max(320, viewportWidth.value - shellPadding - controlWidth);
+  const availableHeight = Math.max(320, viewportHeight.value - 120);
+  const boardSpace = Math.min(availableWidth, availableHeight);
+  const size = Math.floor((boardSpace / matrix.value.length) * (form.cellScale / 100));
+
+  return Math.max(18, Math.min(56, size));
+});
+
+/**
+ * 图层开关的展示配置。
+ * 用配置驱动模板，避免多个重复的表单片段。
+ */
+const displayOptions = [
+  { key: "showDiagonal", label: "角线", description: "显示两条中心对角线。" },
+  { key: "showCross", label: "十字线", description: "显示中心横轴与竖轴。" },
+  { key: "showHorseLine", label: "2:1 骑士线", description: "显示较陡的骑士辅助线。" },
+  { key: "showHorseLineFlat", label: "1:2 骑士线", description: "显示较平的骑士辅助线。" },
+  { key: "showCoords", label: "坐标点", description: "显示或隐藏每个格子的坐标文本。" },
+];
+
+/**
+ * 根据趋势方向切换选中点和趋势点的颜色。
+ * 上升沿用当前配色，下降时反转两者的高亮颜色。
+ */
+const trendPalette = computed(() => {
+  if (form.trendDirection === "down") {
+    return {
+      selected: "#ff8e8e",
+      trend: "#2dff8e",
+    };
+  }
+
+  return {
+    selected: "#2dff8e",
+    trend: "#ff8e8e",
+  };
+});
+
+/** 矩阵绘制区域的总像素宽高。 */
+const totalSize = computed(() => matrix.value.length * cellSize.value);
+/** 矩阵中心点在 SVG 中的像素位置。 */
 const centerPx = computed(() => totalSize.value / 2);
+/** 当前矩阵中心的行列下标。 */
 const mid = computed(() => Math.floor(matrix.value.length / 2));
+/** 2:1 骑士线在 SVG 上的坐标。 */
 const horseLineCoords = computed(() => getLineCoordsBySlope(2, totalSize.value, centerPx.value));
+/** 1:2 骑士线在 SVG 上的坐标。 */
 const horseLineFlatCoords = computed(() => getLineCoordsBySlope(0.5, totalSize.value, centerPx.value));
+/** 顶部状态区展示的趋势方向文字。 */
+const trendDirectionLabel = computed(() => (form.trendDirection === "up" ? "上升趋势" : "下降趋势"));
+/** 当前选中值的展示文案。 */
+const selectedValueLabel = computed(() => {
+  if (!selectedCell.value || !matrix.value.length) return "未选择";
+  return matrix.value[selectedCell.value.r]?.[selectedCell.value.c] ?? "未选择";
+});
+/** 当前搜索命中坐标的展示文案。 */
+const highlightLabel = computed(() => (
+  highlightPos.value.r === -1 ? "未命中" : `${highlightPos.value.r}, ${highlightPos.value.c}`
+));
 
+/**
+ * 生成新的 Gann 矩阵，并重置当前选中态与搜索结果。
+ */
 function generateMatrix() {
   matrix.value = generateGannMatrix(form.base, form.step, form.loop);
   selectedCell.value = null;
@@ -144,113 +146,123 @@ function generateMatrix() {
   highlightPos.value = { r: -1, c: -1 };
 }
 
+/**
+ * 按输入数值在矩阵中定位坐标。
+ */
 function highlightNumber() {
   highlightPos.value = findNumberPosition(matrix.value, searchNumber.value);
 }
 
+/**
+ * 点击矩阵单元格后，根据当前模式计算趋势主线和副线。
+ */
 function handleCellClick(r, c) {
-  console.log("坐标 r:" + r, "坐标 c:" + c);
-
   if (!form.modeEnabled) return;
 
   selectedCell.value = { r, c };
 
   const result = calculateClickTrend(matrix.value, r, c, form.trendDirection);
+  trendCells.value = result.trendCells;
 
   console.log("点击值:", result.clickedValue);
   console.log("主线:", result.mainLine.map(x => x.value));
   console.log("副线:", result.crossLine.map(x => x.value));
   console.log("mainLinePoints", result.mainLinePoints);
   console.log("crossLinePoints", result.crossLinePoints);
-
-  trendCells.value = result.trendCells;
-
   console.log("趋势主线:", result.trendMain.map(x => x.value));
   console.log("趋势副线:", result.trendCross.map(x => x.value));
 }
 
+/**
+ * 计算每个矩阵单元格的视觉样式。
+ * 包括默认底色、趋势高亮、选中高亮和搜索边框。
+ */
 function getCellStyle(r, c) {
-  const layer = Math.max(
-    Math.abs(r - mid.value),
-    Math.abs(c - mid.value)
-  );
+  const layer = Math.max(Math.abs(r - mid.value), Math.abs(c - mid.value));
+  const baseColor = layer % 3 === 0 ? "#fff6df" : "#e8f3ff";
 
-  const colorA = "#FFF8E1";
-  const colorB = "#E1F5FE";
-  const bg = layer % 3 === 0 ? colorA : colorB;
+  let backgroundColor = baseColor;
+  let border = "1px solid rgba(34, 44, 74, 0.16)";
 
-  let backgroundColor = bg;
-  let border = "1px solid #333";
-
-  const isTrend = trendCells.value.some(
-    pos => pos.r === r && pos.c === c
-  );
-
+  const isTrend = trendCells.value.some(pos => pos.r === r && pos.c === c);
   if (isTrend) {
-    backgroundColor = "#FF8E8E";
+    backgroundColor = trendPalette.value.trend;
   }
 
-  if (
-    selectedCell.value &&
-    selectedCell.value.r === r &&
-    selectedCell.value.c === c
-  ) {
-    backgroundColor = "#2DFF8E";
+  if (selectedCell.value && selectedCell.value.r === r && selectedCell.value.c === c) {
+    backgroundColor = trendPalette.value.selected;
   }
 
-  if (
-    highlightPos.value.r === r &&
-    highlightPos.value.c === c
-  ) {
-    border = "4px solid #FF5722";
+  if (highlightPos.value.r === r && highlightPos.value.c === c) {
+    border = "3px solid #ff7a00";
   }
 
   return {
-    width: cellSize + "px",
-    height: cellSize + "px",
+    width: `${cellSize.value}px`,
+    height: `${cellSize.value}px`,
     backgroundColor,
     border,
-    display: "flex",
-    justifyContent: "center",
-    alignItems: "center",
-    boxSizing: "border-box",
     cursor: form.modeEnabled ? "pointer" : "default",
-    transition: "all 0.2s ease",
   };
 }
+
+function getCellClass(r, c) {
+  return {
+    "is-highlight": highlightPos.value.r === r && highlightPos.value.c === c,
+    "coords-hidden": !form.showCoords,
+  };
+}
+
+function updateViewport() {
+  viewportWidth.value = window.innerWidth;
+  viewportHeight.value = window.innerHeight;
+}
+
+onMounted(() => {
+  updateViewport();
+  window.addEventListener("resize", updateViewport);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener("resize", updateViewport);
+});
 
 generateMatrix();
 </script>
 
 <style scoped>
-.form {
-  margin-bottom: 20px;
+:global(body) {
+  margin: 0;
+  font-family: "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  background:
+    radial-gradient(circle at top left, rgba(75, 145, 255, 0.15), transparent 28%),
+    radial-gradient(circle at bottom right, rgba(255, 122, 0, 0.14), transparent 24%),
+    linear-gradient(180deg, #f4f7fb 0%, #eef3f9 100%);
 }
 
-.matrix-wrapper {
-  position: relative;
-  display: inline-block;
+.app-shell {
+  min-height: 100vh;
+  padding: 16px;
+  color: #1f2a44;
+  box-sizing: border-box;
 }
 
-.matrix-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  pointer-events: none;
-  z-index: 10;
+.workspace-grid {
+  display: grid;
+  grid-template-columns: minmax(350px, 288px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
 }
 
-.matrix {
-  position: relative;
-  z-index: 1;
+@media (max-width: 1180px) {
+  .workspace-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
-.row {
-  display: flex;
-}
-
-.cell {
-  flex-direction: column;
-  flex-wrap: wrap;
+@media (max-width: 860px) {
+  .app-shell {
+    padding: 12px;
+  }
 }
 </style>

@@ -1,3 +1,6 @@
+/**
+ * 以中心点为起点，按螺旋顺序生成 Gann 九方图矩阵。
+ */
 export function generateGannMatrix(base, step, loop) {
   const size = 2 * loop + 1;
   const mat = Array.from({ length: size }, () => Array(size).fill(null));
@@ -42,6 +45,9 @@ export function generateGannMatrix(base, step, loop) {
   }
 }
 
+/**
+ * 根据斜率计算一条穿过矩阵中心的辅助线在 SVG 画布中的端点。
+ */
 export function getLineCoordsBySlope(k, totalSize, centerPx) {
   if (totalSize === 0) return null;
 
@@ -69,6 +75,9 @@ export function getLineCoordsBySlope(k, totalSize, centerPx) {
   };
 }
 
+/**
+ * 在矩阵中查找某个数值对应的坐标。
+ */
 export function findNumberPosition(matrix, target) {
   for (let r = 0; r < matrix.length; r++) {
     for (let c = 0; c < matrix.length; c++) {
@@ -81,6 +90,9 @@ export function findNumberPosition(matrix, target) {
   return { r: -1, c: -1 };
 }
 
+/**
+ * 取出点击点所在的主对角线。
+ */
 export function getMainDiagonal(matrix, r, c) {
   const result = [];
   const mainConst = r - c;
@@ -96,6 +108,9 @@ export function getMainDiagonal(matrix, r, c) {
   return result;
 }
 
+/**
+ * 取出穿过矩阵中心的副对角线。
+ */
 export function getCenterAntiDiagonal(matrix) {
   const result = [];
   const center = Math.floor(matrix.length / 2);
@@ -112,13 +127,19 @@ export function getCenterAntiDiagonal(matrix) {
   return result;
 }
 
+/**
+ * 下降模式下，主对角线只保留比点击值更小的点。
+ */
 export function getMainDiagonalDown(mainLine, clickedValue) {
   return mainLine.filter(item => item.value < clickedValue);
 }
 
+/**
+ * 下降模式下，从中心点向外截取副对角线中小于点击值的点。
+ */
 export function getAntiDiagonalDown(antiLine, clickedValue) {
   const result = [];
-  const oneIndex = antiLine.findIndex(item => item.value === 1);
+  const oneIndex = getLineCenterIndex(antiLine);
   if (oneIndex === -1) return [];
 
   for (let i = oneIndex - 1; i >= 0; i--) {
@@ -133,6 +154,9 @@ export function getAntiDiagonalDown(antiLine, clickedValue) {
   return result;
 }
 
+/**
+ * 收集穿过矩阵中心的主要参考线，供调试和归属判断使用。
+ */
 export function getAllCenterLines(matrix) {
   const size = matrix.length;
   const center = Math.floor(size / 2);
@@ -171,6 +195,9 @@ export function getAllCenterLines(matrix) {
   return lines;
 }
 
+/**
+ * 判断某个值落在哪条中心参考线上。
+ */
 export function findBelongLine(lines, clickedValue) {
   for (const key in lines) {
     const exists = lines[key].some(item => item.value === clickedValue);
@@ -180,6 +207,10 @@ export function findBelongLine(lines, clickedValue) {
   return null;
 }
 
+/**
+ * 根据点击点的坐标关系，为当前点选出主线和副线。
+ * 这里同时处理普通对角线、十字线以及 2:1 骑士线附近的特殊修正。
+ */
 export function getCrossLines(matrix, clickedValue, r, c) {
   const size = matrix.length;
   const center = Math.floor(size / 2);
@@ -261,10 +292,23 @@ export function getCrossLines(matrix, clickedValue, r, c) {
   return { mainLine, crossLine };
 }
 
+/**
+ * 计算一个点位于中心外第几圈。
+ */
 function getLayer(r, c, center) {
   return Math.max(Math.abs(r - center), Math.abs(c - center));
 }
 
+/**
+ * 对于穿过矩阵中心且已排序的线，中心点总在中间索引。
+ */
+function getLineCenterIndex(points) {
+  return points.length ? Math.floor(points.length / 2) : -1;
+}
+
+/**
+ * 判断某个点是否位于 2:1 或 1:2 骑士线族上。
+ */
 function isHorse21Point(r, c, center) {
   const rowDiff = r - center;
   const colDiff = c - center;
@@ -277,6 +321,9 @@ function isHorse21Point(r, c, center) {
   );
 }
 
+/**
+ * 收集矩阵中所有骑士线上的点，便于做特殊规则修正。
+ */
 function getHorse21Points(matrix) {
   const center = Math.floor(matrix.length / 2);
   const points = [];
@@ -292,6 +339,9 @@ function getHorse21Points(matrix) {
   return points;
 }
 
+/**
+ * 判断当前主线在穿过中心前，是否会先碰到内圈骑士线点。
+ */
 function mainLineTouchesOuterHorse21(matrix, r, c) {
   const center = Math.floor(matrix.length / 2);
   const clickLayer = getLayer(r, c, center);
@@ -326,6 +376,9 @@ function mainLineTouchesOuterHorse21(matrix, r, c) {
   return false;
 }
 
+/**
+ * 下降模式下，如果主线触发了骑士线特例，则优先使用修正后的副线截取结果。
+ */
 function getAxisHorseAdjustedCrossLine(matrix, crossLinePoints, r, c, clickedValue) {
   const center = Math.floor(matrix.length / 2);
   const L = getLayer(r, c, center);
@@ -370,9 +423,13 @@ function getAxisHorseAdjustedCrossLine(matrix, crossLinePoints, r, c, clickedVal
   return null;
 }
 
+/**
+ * 给下降模式计算副线的目标方向和目标端点。
+ * 返回的是围绕中心点需要截取到哪一侧。
+ */
 function getCrossLineDirectionTarget(matrix, crossLinePoints, r, c) {
   const center = Math.floor(matrix.length / 2);
-  const originIdx = crossLinePoints.findIndex(x => x.value === 1);
+  const originIdx = getLineCenterIndex(crossLinePoints);
   const L = getLayer(r, c, center);
   const isHorizontalCross = crossLinePoints.every(point => point.r === center);
   const isVerticalCross = crossLinePoints.every(point => point.c === center);
@@ -428,8 +485,11 @@ function getCrossLineDirectionTarget(matrix, crossLinePoints, r, c) {
   return null;
 }
 
+/**
+ * 以中心点为基准，从副线上切出一段连续区间。
+ */
 function sliceCrossLineFromCenter(crossLinePoints, targetIdx, shouldExcludeCenter) {
-  const originIdx = crossLinePoints.findIndex(x => x.value === 1);
+  const originIdx = getLineCenterIndex(crossLinePoints);
   const startIdx = Math.min(originIdx, targetIdx) + (shouldExcludeCenter && targetIdx > originIdx ? 1 : 0);
   const endIdx = Math.max(originIdx, targetIdx) - (shouldExcludeCenter && targetIdx < originIdx ? 1 : 0);
   const points = crossLinePoints.slice(
@@ -440,9 +500,12 @@ function sliceCrossLineFromCenter(crossLinePoints, targetIdx, shouldExcludeCente
   return targetIdx >= originIdx ? points : points.reverse();
 }
 
+/**
+ * 先把下降模式的副线边界算出来，供上升模式镜像复用。
+ */
 function getCrossLineDownBounds(matrix, crossLinePoints, r, c) {
   const center = Math.floor(matrix.length / 2);
-  const originIdx = crossLinePoints.findIndex(x => x.value === 1);
+  const originIdx = getLineCenterIndex(crossLinePoints);
   const L = getLayer(r, c, center);
   const isHorizontalCross = crossLinePoints.every(point => point.r === center);
   const isVerticalCross = crossLinePoints.every(point => point.c === center);
@@ -483,8 +546,11 @@ function getCrossLineDownBounds(matrix, crossLinePoints, r, c) {
   return null;
 }
 
+/**
+ * 根据下降模式的边界，推导上升模式下镜像后的副线区间。
+ */
 function getCrossLineUpFromDownBounds(crossLinePoints, downBounds) {
-  const originIdx = crossLinePoints.findIndex(x => x.value === 1);
+  const originIdx = getLineCenterIndex(crossLinePoints);
   if (originIdx === -1 || !downBounds) return [];
 
   const leftDistance = Math.max(0, originIdx - downBounds.startIdx);
@@ -506,6 +572,9 @@ function getCrossLineUpFromDownBounds(crossLinePoints, downBounds) {
   return result;
 }
 
+/**
+ * 把点击点投影到当前副线上，便于处理无法直接落在线上的特殊情况。
+ */
 function getCrossLineProjectionIndex(matrix, crossLinePoints, r, c) {
   const center = Math.floor(matrix.length / 2);
   const isHorizontalCross = crossLinePoints.every(point => point.r === center);
@@ -522,7 +591,7 @@ function getCrossLineProjectionIndex(matrix, crossLinePoints, r, c) {
   } else if (isMainDiagonalCross || isAntiDiagonalCross) {
     const clickIsOnCrossLine = crossLinePoints.some(point => point.r === r && point.c === c);
     if (clickIsOnCrossLine) {
-      return crossLinePoints.findIndex(point => point.value === 1);
+      return getLineCenterIndex(crossLinePoints);
     }
 
     const targetLayer = getLayer(r, c, center);
@@ -535,10 +604,14 @@ function getCrossLineProjectionIndex(matrix, crossLinePoints, r, c) {
   return projectionPoint ? crossLinePoints.indexOf(projectionPoint) : -1;
 }
 
+/**
+ * 计算下降模式的趋势副线。
+ * 核心规则是围绕中心向点击点所在方向截取，并保留比点击值更小的点。
+ */
 export function getCrossLineDown(matrix, crossLinePoints, r, c) {
   const size = matrix.length;
   const center = Math.floor(size / 2);
-  const originIdx = crossLinePoints.findIndex(x => x.value === 1);
+  const originIdx = getLineCenterIndex(crossLinePoints);
   if (originIdx === -1) return [];
 
   const L = Math.max(Math.abs(r - center), Math.abs(c - center));
@@ -631,6 +704,10 @@ export function getCrossLineDown(matrix, crossLinePoints, r, c) {
   );
 }
 
+/**
+ * 计算上升模式的趋势主线。
+ * 从点击点沿主线朝远离中心的一侧截取，直到碰到第一个更大的点。
+ */
 export function getMainLineUp(matrix, mainLine, clickedValue) {
   const center = Math.floor(matrix.length / 2);
   const clickIndex = mainLine.findIndex(x => x.value === clickedValue);
@@ -670,10 +747,14 @@ export function getMainLineUp(matrix, mainLine, clickedValue) {
   return result;
 }
 
+/**
+ * 计算上升模式的趋势副线。
+ * 方向完全依赖矩阵坐标关系，遇到横线、竖线和对角线会分别按对应规则截取。
+ */
 export function getCrossLineUp(matrix, crossLinePoints, r, c) {
   if (!Array.isArray(crossLinePoints) || crossLinePoints.length === 0) return [];
 
-  const originIndex = crossLinePoints.findIndex(x => x.value === 1);
+  const originIndex = getLineCenterIndex(crossLinePoints);
   if (originIndex === -1) return [];
 
   const center = Math.floor(matrix.length / 2);
@@ -784,6 +865,9 @@ export function getCrossLineUp(matrix, crossLinePoints, r, c) {
   return orderedPoints;
 }
 
+/**
+ * 把一组数值重新映射回矩阵坐标点。
+ */
 export function getPointsFromMatrix(matrix, values) {
   const result = [];
   const size = matrix.length;
@@ -805,6 +889,9 @@ export function getPointsFromMatrix(matrix, values) {
   return result;
 }
 
+/**
+ * 把数值数组转换成带坐标的点数组，方便前端直接高亮。
+ */
 export function convertToPointArray(matrix, valueArray) {
   const size = matrix.length;
   const valToPos = {};
@@ -821,6 +908,10 @@ export function convertToPointArray(matrix, valueArray) {
   }).filter(item => item !== null);
 }
 
+/**
+ * 点击矩阵后的统一入口。
+ * 返回主线、副线以及最终用于高亮的趋势点集合。
+ */
 export function calculateClickTrend(matrix, r, c, trendDirection) {
   const clickedValue = matrix[r][c];
   const { mainLine, crossLine } = getCrossLines(matrix, clickedValue, r, c);
