@@ -339,15 +339,90 @@ const displayExpanded = ref(false);
     border-radius: 18px;
   }
 
-  .field-grid,
-  .toggle-grid,
-  .search-row {
+  .toggle-grid {
     grid-template-columns: 1fr;
   }
 
-  .search-input,
+  .field-card,
+  .toggle-card {
+    border-radius: 14px;
+  }
+}
+
+@media (max-width: 640px) {
+  .control-panel {
+    gap: 12px;
+  }
+
+  .panel-block {
+    padding: 14px;
+    border-radius: 16px;
+  }
+
+  .section-bar {
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+
+  .section-heading h2 {
+    font-size: 16px;
+  }
+
+  .section-heading p,
+  .toggle-card p,
+  .status-strip {
+    font-size: 12px;
+    line-height: 1.45;
+  }
+
+  .section-toggle {
+    min-width: 54px;
+    padding: 7px 11px;
+    border-radius: 10px;
+    font-size: 12px;
+  }
+
+  .field-grid,
+  .toggle-grid {
+    gap: 10px;
+  }
+
+  .field-card,
+  .toggle-card {
+    gap: 10px;
+    min-height: 60px;
+    padding: 11px 12px;
+    border-radius: 14px;
+  }
+
+  .field-label {
+    font-size: 15px;
+  }
+
+  .basic-field {
+    gap: 10px;
+  }
+
+  .basic-field .field-control {
+    width: 112px;
+  }
+
+  .search-row {
+    grid-template-columns: minmax(0, 1fr) 76px;
+    gap: 8px;
+  }
+
+  .primary-action,
   .search-button {
-    width: 100%;
+    min-height: 42px;
+  }
+
+  .status-strip {
+    gap: 6px;
+    margin-top: 10px;
+    padding: 10px 12px;
+    border-radius: 14px;
   }
 }
 </style>

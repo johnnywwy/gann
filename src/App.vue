@@ -245,7 +245,7 @@ generateMatrix();
 
 .workspace-grid {
   display: grid;
-  grid-template-columns: minmax(350px, 288px) minmax(0, 1fr);
+  grid-template-columns: 308px minmax(0, 1fr);
   gap: 16px;
   align-items: start;
 }
@@ -253,12 +253,17 @@ generateMatrix();
 @media (max-width: 1180px) {
   .workspace-grid {
     grid-template-columns: 1fr;
+    gap: 14px;
   }
 }
 
-@media (max-width: 860px) {
+@media (max-width: 640px) {
   .app-shell {
-    padding: 12px;
+    padding: 10px 10px 14px;
+  }
+
+  .workspace-grid {
+    gap: 12px;
   }
 }
 </style>

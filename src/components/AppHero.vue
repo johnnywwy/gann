@@ -37,4 +37,22 @@ h1 {
     border-radius: 16px;
   }
 }
+
+@media (max-width: 640px) {
+  .hero-band {
+    margin-bottom: 12px;
+    padding: 12px 14px;
+    border-radius: 14px;
+  }
+
+  .eyebrow {
+    margin-bottom: 4px;
+    font-size: 11px;
+  }
+
+  h1 {
+    font-size: 22px;
+    line-height: 1.2;
+  }
+}
 </style>

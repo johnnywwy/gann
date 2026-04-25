@@ -436,8 +436,19 @@ defineEmits(["cell-click"]);
 }
 
 @media (max-width: 860px) {
-  .trend-layout,
-  .trend-switcher,
+  .board-panel {
+    gap: 12px;
+  }
+
+  .trend-layout {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .trend-switcher {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .legend-grid {
     grid-template-columns: 1fr;
   }
@@ -450,8 +461,73 @@ defineEmits(["cell-click"]);
 }
 
 @media (max-width: 560px) {
-  .cell-value {
-    font-size: 13px;
+  .trend-panel {
+    padding: 12px;
+    border-radius: 16px;
+  }
+
+  .matrix-panel {
+    padding: 10px;
+    border-radius: 16px;
+  }
+
+  .section-heading {
+    margin-bottom: 8px;
+  }
+
+  .section-heading h2 {
+    font-size: 16px;
+  }
+
+  .section-heading p,
+  .toggle-card p,
+  .legend-item {
+    font-size: 12px;
+  }
+
+  .toggle-card {
+    align-items: flex-start;
+    min-height: auto;
+    padding: 12px;
+    border-radius: 14px;
+  }
+
+  .trend-switcher {
+    gap: 8px;
+  }
+
+  .trend-button {
+    min-height: 52px;
+    border-radius: 12px;
+    font-size: 14px;
+  }
+
+  .legend-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .legend-item {
+    min-height: 40px;
+    padding: 8px 10px;
+    border-radius: 12px;
+  }
+
+  .matrix-scroll {
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    padding-bottom: 2px;
+  }
+
+  .matrix-wrapper {
+    padding: 4px;
+  }
+
+  .matrix-overlay {
+    top: 4px;
+    left: 4px;
   }
 }
 </style>
