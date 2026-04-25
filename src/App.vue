@@ -24,7 +24,6 @@
         :horse-line-flat-coords="horseLineFlatCoords"
         :mid="mid"
         :mode-enabled="form.modeEnabled"
-        :trend-direction-label="trendDirectionLabel"
         :trend-palette="trendPalette"
         :get-cell-style="getCellStyle"
         :get-cell-class="getCellClass"
@@ -35,7 +34,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
+import { computed, reactive, ref } from "vue";
 import AppHero from "./components/AppHero.vue";
 import ControlPanel from "./components/ControlPanel.vue";
 import MatrixBoard from "./components/MatrixBoard.vue";
@@ -46,6 +45,19 @@ import {
   getLineCoordsBySlope,
 } from "./utils/gannMatrix";
 
+function getInitialCellScale() {
+  if (typeof window === "undefined") return 110;
+
+  const width = window.innerWidth;
+
+  if (width >= 1440) return 180;
+  if (width >= 1180) return 122;
+  if (width >= 900) return 112;
+  if (width >= 760) return 102;
+
+  return 92;
+}
+
 /**
  * 页面上的核心配置项。
  * 统一放在一个 reactive 对象里，便于后续扩展和保存配置。
@@ -54,8 +66,8 @@ const form = reactive({
   base: 1,
   step: 1,
   loop: 9,
-  cellScale: 75,
-  lineOpacity: 36,
+  cellScale: getInitialCellScale(),
+  lineOpacity: 60,
   fontScale: 100,
   showDiagonal: true,
   showCross: true,
@@ -71,18 +83,12 @@ const selectedCell = ref(null);
 const trendCells = ref([]);
 const searchNumber = ref(null);
 const highlightPos = ref({ r: -1, c: -1 });
-const viewportWidth = ref(typeof window === "undefined" ? 1440 : window.innerWidth);
-const viewportHeight = ref(typeof window === "undefined" ? 900 : window.innerHeight);
+const BOARD_REFERENCE_SIZE = 680;
 
 const cellSize = computed(() => {
   if (!matrix.value.length) return 40;
 
-  const shellPadding = viewportWidth.value <= 860 ? 24 : 36;
-  const controlWidth = viewportWidth.value > 1180 ? 308 : 0;
-  const availableWidth = Math.max(320, viewportWidth.value - shellPadding - controlWidth);
-  const availableHeight = Math.max(320, viewportHeight.value - 120);
-  const boardSpace = Math.min(availableWidth, availableHeight);
-  const autoSize = Math.floor(boardSpace / matrix.value.length);
+  const autoSize = Math.floor(BOARD_REFERENCE_SIZE / matrix.value.length);
   const size = Math.floor(autoSize * (form.cellScale / 100));
 
   return Math.max(12, size);
@@ -107,14 +113,14 @@ const displayOptions = [
 const trendPalette = computed(() => {
   if (form.trendDirection === "down") {
     return {
-      selected: "rgba(255, 142, 142, 0.34)",
-      trend: "rgba(45, 255, 142, 0.34)",
+      selected: "#ff8e8e",
+      trend: "#2dff8e",
     };
   }
 
   return {
-    selected: "rgba(45, 255, 142, 0.34)",
-    trend: "rgba(255, 142, 142, 0.34)",
+    selected: "#2dff8e",
+    trend: "#ff8e8e",
   };
 });
 
@@ -128,8 +134,6 @@ const mid = computed(() => Math.floor(matrix.value.length / 2));
 const horseLineCoords = computed(() => getLineCoordsBySlope(2, totalSize.value, centerPx.value));
 /** 1:2 骑士线在 SVG 上的坐标。 */
 const horseLineFlatCoords = computed(() => getLineCoordsBySlope(0.5, totalSize.value, centerPx.value));
-/** 顶部状态区展示的趋势方向文字。 */
-const trendDirectionLabel = computed(() => (form.trendDirection === "up" ? "上升趋势" : "下降趋势"));
 /** 当前选中值的展示文案。 */
 const selectedValueLabel = computed(() => {
   if (!selectedCell.value || !matrix.value.length) return "未选择";
@@ -218,20 +222,6 @@ function getCellClass(r, c) {
     "coords-hidden": !form.showCoords,
   };
 }
-
-function updateViewport() {
-  viewportWidth.value = window.innerWidth;
-  viewportHeight.value = window.innerHeight;
-}
-
-onMounted(() => {
-  updateViewport();
-  window.addEventListener("resize", updateViewport);
-});
-
-onBeforeUnmount(() => {
-  window.removeEventListener("resize", updateViewport);
-});
 
 generateMatrix();
 </script>

@@ -199,11 +199,6 @@ defineProps({
     type: Boolean,
     required: true,
   },
-  trendDirectionLabel: {
-    type: String,
-    required: false,
-    default: "",
-  },
   trendPalette: {
     type: Object,
     required: true,
@@ -224,7 +219,7 @@ defineEmits(["cell-click"]);
 <style scoped>
 .board-panel {
   display: grid;
-  gap: 12px;
+  gap: 16px;
 }
 
 .trend-panel,
