@@ -50,7 +50,7 @@ function getInitialCellScale() {
 
   const width = window.innerWidth;
 
-  if (width >= 1440) return 180;
+  if (width >= 1440) return 135;
   if (width >= 1180) return 122;
   if (width >= 900) return 112;
   if (width >= 760) return 102;
