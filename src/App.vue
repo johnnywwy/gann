@@ -30,14 +30,32 @@
         @cell-click="handleCellClick"
       />
     </div>
+
+    <BacktestPanel
+      :market-form="marketForm"
+      :stock-catalog="stockCatalog"
+      :candles="stockCandles"
+      :selected-value-label="selectedValueLabel"
+      :chart-levels="projectedLevels"
+      :trend-direction="form.trendDirection"
+      @update:stock-symbol="handleStockSymbolChange"
+      @update:trend-direction="form.trendDirection = $event"
+      @select-price="handleMarketPriceSelect"
+      @project-price="handleProjectPrice"
+    />
   </div>
 </template>
 
 <script setup>
-import { computed, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref, watch } from "vue";
 import AppHero from "./components/AppHero.vue";
+import BacktestPanel from "./components/BacktestPanel.vue";
 import ControlPanel from "./components/ControlPanel.vue";
 import MatrixBoard from "./components/MatrixBoard.vue";
+import {
+  buildBacktestLevels,
+  parseStockJson,
+} from "./utils/marketBacktest";
 import {
   calculateClickTrend,
   findNumberPosition,
@@ -81,9 +99,21 @@ const form = reactive({
 const matrix = ref([]);
 const selectedCell = ref(null);
 const trendCells = ref([]);
+const lastTrendResult = ref(null);
 const searchNumber = ref(null);
 const highlightPos = ref({ r: -1, c: -1 });
 const BOARD_REFERENCE_SIZE = 680;
+const stockCandles = ref([]);
+const stockCatalog = ref([]);
+const marketForm = reactive({
+  symbol: "",
+  datasetPath: "",
+  anchorPrice: null,
+  priceUnit: 1,
+  timeframe: "day",
+  chartHeight: 1500,
+  swingSmoothDays: 5,
+});
 
 const cellSize = computed(() => {
   if (!matrix.value.length) return 40;
@@ -144,6 +174,24 @@ const highlightLabel = computed(() => (
   highlightPos.value.r === -1 ? "未命中" : `${highlightPos.value.r}, ${highlightPos.value.c}`
 ));
 
+const projectedLevels = computed(() => {
+  if (!lastTrendResult.value || !selectedCell.value) return [];
+
+  const levels = buildBacktestLevels({
+    clickedValue: lastTrendResult.value.clickedValue,
+    trendMain: lastTrendResult.value.trendMain,
+    trendCross: lastTrendResult.value.trendCross,
+    matrixStep: form.step,
+    anchorPrice: marketForm.anchorPrice,
+    priceUnit: marketForm.priceUnit,
+  });
+
+  return levels.map(item => ({
+    ...item,
+    price: Math.round(item.price * 10000) / 10000,
+  }));
+});
+
 /**
  * 生成新的 Gann 矩阵，并重置当前选中态与搜索结果。
  */
@@ -151,6 +199,7 @@ function generateMatrix() {
   matrix.value = generateGannMatrix(form.base, form.step, form.loop);
   selectedCell.value = null;
   trendCells.value = [];
+  lastTrendResult.value = null;
   highlightPos.value = { r: -1, c: -1 };
 }
 
@@ -170,6 +219,7 @@ function handleCellClick(r, c) {
   selectedCell.value = { r, c };
 
   const result = calculateClickTrend(matrix.value, r, c, form.trendDirection);
+  lastTrendResult.value = result;
   trendCells.value = result.trendCells;
 
   console.log("点击值:", result.clickedValue);
@@ -179,6 +229,16 @@ function handleCellClick(r, c) {
   console.log("crossLinePoints", result.crossLinePoints);
   console.log("趋势主线:", result.trendMain.map(x => x.value));
   console.log("趋势副线:", result.trendCross.map(x => x.value));
+}
+
+function calculateTrendFromCell(r, c) {
+  if (!form.modeEnabled) return;
+
+  selectedCell.value = { r, c };
+
+  const result = calculateClickTrend(matrix.value, r, c, form.trendDirection);
+  lastTrendResult.value = result;
+  trendCells.value = result.trendCells;
 }
 
 /**
@@ -223,7 +283,103 @@ function getCellClass(r, c) {
   };
 }
 
+function handleStockSymbolChange(symbol) {
+  marketForm.symbol = symbol;
+  const current = stockCatalog.value.find(item => item.symbol === symbol);
+  marketForm.datasetPath = current?.files?.[0]?.path ?? "";
+}
+
+function handleMarketPriceSelect(point) {
+  ensureMatrixCoversPrice(point.price);
+
+  const matrixPoint = findNearestMatrixPoint(point.price);
+
+  marketForm.anchorPrice = point.price;
+  searchNumber.value = matrixPoint.value;
+  highlightPos.value = { r: matrixPoint.r, c: matrixPoint.c };
+  calculateTrendFromCell(matrixPoint.r, matrixPoint.c);
+}
+
+function handleProjectPrice(price) {
+  handleMarketPriceSelect({ price });
+}
+
+function ensureMatrixCoversPrice(price) {
+  const target = Number(price);
+  if (!Number.isFinite(target) || !matrix.value.length || form.step <= 0) return;
+
+  let values = matrix.value.flat();
+  let min = Math.min(...values);
+  let max = Math.max(...values);
+
+  while ((target < min || target > max) && form.loop < 80) {
+    form.loop += 1;
+    matrix.value = generateGannMatrix(form.base, form.step, form.loop);
+    values = matrix.value.flat();
+    min = Math.min(...values);
+    max = Math.max(...values);
+  }
+}
+
+/**
+ * Load local JSON daily candles for the selected symbol and dataset.
+ */
+async function loadSelectedStockData() {
+  if (!marketForm.datasetPath) return;
+
+  const response = await fetch(resolvePublicPath(marketForm.datasetPath));
+  const raw = await response.json();
+  stockCandles.value = parseStockJson(raw);
+}
+
+async function loadStockCatalog() {
+  const response = await fetch(resolvePublicPath("stockData/catalog.json"));
+  const catalog = await response.json();
+
+  stockCatalog.value = Array.isArray(catalog) ? catalog : [];
+
+  if (!marketForm.symbol && stockCatalog.value.length) {
+    handleStockSymbolChange(stockCatalog.value[0].symbol);
+  }
+}
+
+function resolvePublicPath(path) {
+  const base = import.meta.env.BASE_URL || "/";
+  return `${base}${String(path).replace(/^\/+/, "")}`;
+}
+
+function findNearestMatrixPoint(price) {
+  const target = Number(price);
+  let best = { r: 0, c: 0, value: matrix.value[0]?.[0] ?? 0, distance: Infinity };
+
+  for (let r = 0; r < matrix.value.length; r++) {
+    for (let c = 0; c < matrix.value[r].length; c++) {
+      const value = matrix.value[r][c];
+      const distance = Math.abs(value - target);
+
+      if (distance < best.distance) {
+        best = { r, c, value, distance };
+      }
+    }
+  }
+
+  return best;
+}
+
 generateMatrix();
+
+watch(() => marketForm.datasetPath, () => {
+  loadSelectedStockData();
+});
+
+watch(() => form.trendDirection, () => {
+  if (!selectedCell.value) return;
+  calculateTrendFromCell(selectedCell.value.r, selectedCell.value.c);
+});
+
+onMounted(() => {
+  loadStockCatalog();
+});
 </script>
 
 <style scoped>

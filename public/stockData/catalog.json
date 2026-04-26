@@ -1,0 +1,83 @@
+[
+  {
+    "symbol": "AAPL_US",
+    "files": [
+      {
+        "label": "AAPL_US.json",
+        "path": "stockData/AAPL_US/AAPL_US.json"
+      }
+    ]
+  },
+  {
+    "symbol": "AVAV_US",
+    "files": [
+      {
+        "label": "AVAV_US.json",
+        "path": "stockData/AVAV_US/AVAV_US.json"
+      }
+    ]
+  },
+  {
+    "symbol": "AXTI_US",
+    "files": [
+      {
+        "label": "AXTI_US.json",
+        "path": "stockData/AXTI_US/AXTI_US.json"
+      }
+    ]
+  },
+  {
+    "symbol": "BE_US",
+    "files": [
+      {
+        "label": "BE_US.json",
+        "path": "stockData/BE_US/BE_US.json"
+      }
+    ]
+  },
+  {
+    "symbol": "NVTS_US",
+    "files": [
+      {
+        "label": "NVTS_US.json",
+        "path": "stockData/NVTS_US/NVTS_US.json"
+      }
+    ]
+  },
+  {
+    "symbol": "ONDS_US",
+    "files": [
+      {
+        "label": "ONDS_US.json",
+        "path": "stockData/ONDS_US/ONDS_US.json"
+      }
+    ]
+  },
+  {
+    "symbol": "QQQ_US",
+    "files": [
+      {
+        "label": "QQQ_US.json",
+        "path": "stockData/QQQ_US/QQQ_US.json"
+      }
+    ]
+  },
+  {
+    "symbol": "RKLB_US",
+    "files": [
+      {
+        "label": "RKLB_US.json",
+        "path": "stockData/RKLB_US/RKLB_US.json"
+      }
+    ]
+  },
+  {
+    "symbol": "SPY_US",
+    "files": [
+      {
+        "label": "SPY_US.json",
+        "path": "stockData/SPY_US/SPY_US.json"
+      }
+    ]
+  }
+]
