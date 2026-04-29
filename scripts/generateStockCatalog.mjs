@@ -115,7 +115,8 @@ const SYMBOL_GROUPS = {
       "COST.US",
       "MCD.US",
       "SBUX.US",
-      "HD.US"
+      "HD.US",
+      "KO.US"
     ]
   },
 

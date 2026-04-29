@@ -264,6 +264,10 @@
       {
         "label": "HD_US",
         "value": "stockData/HD_US.json"
+      },
+      {
+        "label": "KO_US",
+        "value": "stockData/KO_US.json"
       }
     ]
   },
