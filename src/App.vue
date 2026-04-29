@@ -106,12 +106,14 @@ const BOARD_REFERENCE_SIZE = 680;
 const stockCandles = ref([]);
 const stockCatalog = ref([]);
 const marketForm = reactive({
+  group: "",
   symbol: "",
+  stockPath: [],
   datasetPath: "",
   anchorPrice: null,
   priceUnit: 1,
   timeframe: "day",
-  chartHeight: 1500,
+  chartHeight: 800,
   swingSmoothDays: 5,
 });
 
@@ -283,10 +285,20 @@ function getCellClass(r, c) {
   };
 }
 
-function handleStockSymbolChange(symbol) {
+function handleStockSymbolChange(value) {
+  // value 示例：
+  // ["QUANTUM_COMPUTING", "stockData/IONQ_US.json"]
+
+  const group = value?.[0] || "";
+  const filePath = value?.[1] || "";
+
+  const fileName = filePath.split("/").pop() || "";
+  const symbol = fileName.replace(/\.json$/i, "");
+
+  marketForm.group = group;
   marketForm.symbol = symbol;
-  const current = stockCatalog.value.find(item => item.symbol === symbol);
-  marketForm.datasetPath = current?.files?.[0]?.path ?? "";
+  marketForm.stockPath = value || [];
+  marketForm.datasetPath = filePath;
 }
 
 function handleMarketPriceSelect(point) {
@@ -338,8 +350,19 @@ async function loadStockCatalog() {
 
   stockCatalog.value = Array.isArray(catalog) ? catalog : [];
 
-  if (!marketForm.symbol && stockCatalog.value.length) {
-    handleStockSymbolChange(stockCatalog.value[0].symbol);
+  if (!marketForm.datasetPath && stockCatalog.value.length) {
+    const firstGroup = stockCatalog.value.find(group => {
+      return Array.isArray(group.children) && group.children.length > 0;
+    });
+
+    const firstStock = firstGroup?.children?.[0];
+
+    if (firstGroup && firstStock) {
+      handleStockSymbolChange([
+        firstGroup.value,
+        firstStock.value
+      ]);
+    }
   }
 }
 

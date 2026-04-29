@@ -14,18 +14,9 @@
     <div class="toolbar-grid">
       <label class="field-card">
         <span class="field-label">标的</span>
-        <el-select
-          :model-value="marketForm.symbol"
-          placeholder="选择标的"
-          @update:model-value="$emit('update:stock-symbol', $event)"
-        >
-          <el-option
-            v-for="item in stockCatalog"
-            :key="item.symbol"
-            :label="item.symbol"
-            :value="item.symbol"
-          />
-        </el-select>
+
+        <el-cascader :model-value="marketForm.stockPath" :options="stockCatalog" placeholder="选择行业 / 标的" clearable
+          filterable style="width: 100%;" @update:model-value="$emit('update:stock-symbol', $event)" />
       </label>
 
       <div class="field-card price-action-card">
@@ -39,11 +30,8 @@
       <div class="field-card action-card">
         <span class="field-label">趋势方向</span>
         <div class="action-row">
-          <el-segmented
-            :model-value="trendDirection"
-            :options="trendDirectionOptions"
-            @update:model-value="$emit('update:trend-direction', $event)"
-          />
+          <el-segmented :model-value="trendDirection" :options="trendDirectionOptions"
+            @update:model-value="$emit('update:trend-direction', $event)" />
         </div>
       </div>
 
@@ -58,12 +46,7 @@
           <el-switch v-model="showSwingLine" />
         </div>
         <div class="simplify-row">
-          <el-slider
-            v-model="marketForm.swingSmoothDays"
-            :min="1"
-            :max="60"
-            :step="1"
-          />
+          <el-slider v-model="marketForm.swingSmoothDays" :min="1" :max="60" :step="1" />
         </div>
       </div>
     </div>
@@ -141,30 +124,30 @@ const levelMarkLines = computed(() => rankedChartLevels.value
     const weight = getLevelWeight(level.rank);
 
     return {
-    yAxis: level.price,
-    name: level.label,
-    lineStyle: {
-      color,
-      type: "dashed",
-      width: weight.width,
-      opacity: weight.opacity,
-    },
-    label: {
-      show: true,
-      position: "end",
-      distance: 8,
-      formatter: `${level.label} ${formatPrice(level.price)}`,
-      color,
-      fontSize: 11,
-      fontWeight: weight.fontWeight,
-      backgroundColor: "#fff",
-      borderColor: color,
-      borderWidth: 1,
-      borderRadius: 4,
-      padding: [2, 5],
-    },
-  };
-}));
+      yAxis: level.price,
+      name: level.label,
+      lineStyle: {
+        color,
+        type: "dashed",
+        width: weight.width,
+        opacity: weight.opacity,
+      },
+      label: {
+        show: true,
+        position: "end",
+        distance: 8,
+        formatter: `${level.label} ${formatPrice(level.price)}`,
+        color,
+        fontSize: 11,
+        fontWeight: weight.fontWeight,
+        backgroundColor: "#fff",
+        borderColor: color,
+        borderWidth: 1,
+        borderRadius: 4,
+        padding: [2, 5],
+      },
+    };
+  }));
 const combinedMarkLines = computed(() => [
   ...levelMarkLines.value,
   ...buildExtremesMarkLines(),
@@ -997,4 +980,3 @@ h2 {
   }
 }
 </style>
-

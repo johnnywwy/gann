@@ -1,82 +1,373 @@
 [
   {
-    "symbol": "AAPL_US",
-    "files": [
+    "label": "指数 / ETF",
+    "value": "INDEX_ETF",
+    "children": [
       {
-        "label": "AAPL_US.json",
-        "path": "stockData/AAPL_US/AAPL_US.json"
+        "label": "SPY_US",
+        "value": "stockData/SPY_US.json"
+      },
+      {
+        "label": "QQQ_US",
+        "value": "stockData/QQQ_US.json"
+      },
+      {
+        "label": "DIA_US",
+        "value": "stockData/DIA_US.json"
+      },
+      {
+        "label": "IWM_US",
+        "value": "stockData/IWM_US.json"
+      },
+      {
+        "label": "VTI_US",
+        "value": "stockData/VTI_US.json"
       }
     ]
   },
   {
-    "symbol": "AVAV_US",
-    "files": [
+    "label": "美股七巨头",
+    "value": "MAGNIFICENT_7",
+    "children": [
       {
-        "label": "AVAV_US.json",
-        "path": "stockData/AVAV_US/AVAV_US.json"
+        "label": "AAPL_US",
+        "value": "stockData/AAPL_US.json"
+      },
+      {
+        "label": "MSFT_US",
+        "value": "stockData/MSFT_US.json"
+      },
+      {
+        "label": "NVDA_US",
+        "value": "stockData/NVDA_US.json"
+      },
+      {
+        "label": "GOOGL_US",
+        "value": "stockData/GOOGL_US.json"
+      },
+      {
+        "label": "AMZN_US",
+        "value": "stockData/AMZN_US.json"
+      },
+      {
+        "label": "META_US",
+        "value": "stockData/META_US.json"
+      },
+      {
+        "label": "TSLA_US",
+        "value": "stockData/TSLA_US.json"
       }
     ]
   },
   {
-    "symbol": "AXTI_US",
-    "files": [
+    "label": "半导体 / AI 算力",
+    "value": "SEMICONDUCTOR_AI",
+    "children": [
       {
-        "label": "AXTI_US.json",
-        "path": "stockData/AXTI_US/AXTI_US.json"
+        "label": "NVDA_US",
+        "value": "stockData/NVDA_US.json"
+      },
+      {
+        "label": "AMD_US",
+        "value": "stockData/AMD_US.json"
+      },
+      {
+        "label": "AVGO_US",
+        "value": "stockData/AVGO_US.json"
+      },
+      {
+        "label": "TSM_US",
+        "value": "stockData/TSM_US.json"
+      },
+      {
+        "label": "ASML_US",
+        "value": "stockData/ASML_US.json"
       }
     ]
   },
   {
-    "symbol": "BE_US",
-    "files": [
+    "label": "AI 软件 / 云 / 网络安全",
+    "value": "AI_SOFTWARE_CLOUD",
+    "children": [
       {
-        "label": "BE_US.json",
-        "path": "stockData/BE_US/BE_US.json"
+        "label": "PLTR_US",
+        "value": "stockData/PLTR_US.json"
+      },
+      {
+        "label": "CRM_US",
+        "value": "stockData/CRM_US.json"
+      },
+      {
+        "label": "NOW_US",
+        "value": "stockData/NOW_US.json"
+      },
+      {
+        "label": "CRWD_US",
+        "value": "stockData/CRWD_US.json"
+      },
+      {
+        "label": "SNOW_US",
+        "value": "stockData/SNOW_US.json"
       }
     ]
   },
   {
-    "symbol": "NVTS_US",
-    "files": [
+    "label": "航天 / 火箭 / 国防 / 无人机",
+    "value": "SPACE_DEFENSE_DRONE",
+    "children": [
       {
-        "label": "NVTS_US.json",
-        "path": "stockData/NVTS_US/NVTS_US.json"
+        "label": "RKLB_US",
+        "value": "stockData/RKLB_US.json"
+      },
+      {
+        "label": "LMT_US",
+        "value": "stockData/LMT_US.json"
+      },
+      {
+        "label": "NOC_US",
+        "value": "stockData/NOC_US.json"
+      },
+      {
+        "label": "RTX_US",
+        "value": "stockData/RTX_US.json"
+      },
+      {
+        "label": "AVAV_US",
+        "value": "stockData/AVAV_US.json"
       }
     ]
   },
   {
-    "symbol": "ONDS_US",
-    "files": [
+    "label": "电动车 / 汽车 / 自动驾驶",
+    "value": "EV_AUTO",
+    "children": [
       {
-        "label": "ONDS_US.json",
-        "path": "stockData/ONDS_US/ONDS_US.json"
+        "label": "TSLA_US",
+        "value": "stockData/TSLA_US.json"
+      },
+      {
+        "label": "RIVN_US",
+        "value": "stockData/RIVN_US.json"
+      },
+      {
+        "label": "GM_US",
+        "value": "stockData/GM_US.json"
+      },
+      {
+        "label": "F_US",
+        "value": "stockData/F_US.json"
+      },
+      {
+        "label": "MBLY_US",
+        "value": "stockData/MBLY_US.json"
       }
     ]
   },
   {
-    "symbol": "QQQ_US",
-    "files": [
+    "label": "新能源 / 光伏 / 氢能源",
+    "value": "CLEAN_ENERGY",
+    "children": [
       {
-        "label": "QQQ_US.json",
-        "path": "stockData/QQQ_US/QQQ_US.json"
+        "label": "FSLR_US",
+        "value": "stockData/FSLR_US.json"
+      },
+      {
+        "label": "ENPH_US",
+        "value": "stockData/ENPH_US.json"
+      },
+      {
+        "label": "SEDG_US",
+        "value": "stockData/SEDG_US.json"
+      },
+      {
+        "label": "BE_US",
+        "value": "stockData/BE_US.json"
+      },
+      {
+        "label": "PLUG_US",
+        "value": "stockData/PLUG_US.json"
       }
     ]
   },
   {
-    "symbol": "RKLB_US",
-    "files": [
+    "label": "量子计算",
+    "value": "QUANTUM_COMPUTING",
+    "children": [
       {
-        "label": "RKLB_US.json",
-        "path": "stockData/RKLB_US/RKLB_US.json"
+        "label": "IONQ_US",
+        "value": "stockData/IONQ_US.json"
+      },
+      {
+        "label": "RGTI_US",
+        "value": "stockData/RGTI_US.json"
+      },
+      {
+        "label": "QBTS_US",
+        "value": "stockData/QBTS_US.json"
+      },
+      {
+        "label": "QUBT_US",
+        "value": "stockData/QUBT_US.json"
+      },
+      {
+        "label": "IBM_US",
+        "value": "stockData/IBM_US.json"
       }
     ]
   },
   {
-    "symbol": "SPY_US",
-    "files": [
+    "label": "金融 / 支付 / 交易平台",
+    "value": "FINANCE_PAYMENT",
+    "children": [
       {
-        "label": "SPY_US.json",
-        "path": "stockData/SPY_US/SPY_US.json"
+        "label": "JPM_US",
+        "value": "stockData/JPM_US.json"
+      },
+      {
+        "label": "BAC_US",
+        "value": "stockData/BAC_US.json"
+      },
+      {
+        "label": "V_US",
+        "value": "stockData/V_US.json"
+      },
+      {
+        "label": "MA_US",
+        "value": "stockData/MA_US.json"
+      },
+      {
+        "label": "COIN_US",
+        "value": "stockData/COIN_US.json"
+      }
+    ]
+  },
+  {
+    "label": "消费 / 零售 / 餐饮",
+    "value": "CONSUMER_RETAIL",
+    "children": [
+      {
+        "label": "WMT_US",
+        "value": "stockData/WMT_US.json"
+      },
+      {
+        "label": "COST_US",
+        "value": "stockData/COST_US.json"
+      },
+      {
+        "label": "MCD_US",
+        "value": "stockData/MCD_US.json"
+      },
+      {
+        "label": "SBUX_US",
+        "value": "stockData/SBUX_US.json"
+      },
+      {
+        "label": "HD_US",
+        "value": "stockData/HD_US.json"
+      }
+    ]
+  },
+  {
+    "label": "流媒体 / 娱乐 / 游戏",
+    "value": "MEDIA_GAMING",
+    "children": [
+      {
+        "label": "NFLX_US",
+        "value": "stockData/NFLX_US.json"
+      },
+      {
+        "label": "DIS_US",
+        "value": "stockData/DIS_US.json"
+      },
+      {
+        "label": "SPOT_US",
+        "value": "stockData/SPOT_US.json"
+      },
+      {
+        "label": "EA_US",
+        "value": "stockData/EA_US.json"
+      },
+      {
+        "label": "TTWO_US",
+        "value": "stockData/TTWO_US.json"
+      }
+    ]
+  },
+  {
+    "label": "医疗 / 制药 / 减肥药",
+    "value": "HEALTHCARE_PHARMA",
+    "children": [
+      {
+        "label": "LLY_US",
+        "value": "stockData/LLY_US.json"
+      },
+      {
+        "label": "NVO_US",
+        "value": "stockData/NVO_US.json"
+      },
+      {
+        "label": "JNJ_US",
+        "value": "stockData/JNJ_US.json"
+      },
+      {
+        "label": "MRK_US",
+        "value": "stockData/MRK_US.json"
+      },
+      {
+        "label": "UNH_US",
+        "value": "stockData/UNH_US.json"
+      }
+    ]
+  },
+  {
+    "label": "能源 / 石油",
+    "value": "ENERGY_OIL",
+    "children": [
+      {
+        "label": "XOM_US",
+        "value": "stockData/XOM_US.json"
+      },
+      {
+        "label": "CVX_US",
+        "value": "stockData/CVX_US.json"
+      },
+      {
+        "label": "COP_US",
+        "value": "stockData/COP_US.json"
+      },
+      {
+        "label": "OXY_US",
+        "value": "stockData/OXY_US.json"
+      },
+      {
+        "label": "SLB_US",
+        "value": "stockData/SLB_US.json"
+      }
+    ]
+  },
+  {
+    "label": "自选 / 高波动",
+    "value": "WATCHLIST_SMALL_CAP",
+    "children": [
+      {
+        "label": "ONDS_US",
+        "value": "stockData/ONDS_US.json"
+      },
+      {
+        "label": "AXTI_US",
+        "value": "stockData/AXTI_US.json"
+      },
+      {
+        "label": "NVTS_US",
+        "value": "stockData/NVTS_US.json"
+      },
+      {
+        "label": "LUNR_US",
+        "value": "stockData/LUNR_US.json"
+      },
+      {
+        "label": "ASTS_US",
+        "value": "stockData/ASTS_US.json"
       }
     ]
   }
