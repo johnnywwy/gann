@@ -148,7 +148,7 @@
                 class="cell"
                 :class="getCellClass(rIndex, cIndex)"
                 :style="getCellStyle(rIndex, cIndex)"
-                @click="$emit('cell-click', rIndex, cIndex)"
+                @click="handleCellClick(rIndex, cIndex)"
               >
                 <div class="cell-value">{{ cell }}</div>
                 <div v-if="form.showCoords" class="cell-coord">{{ `${rIndex}:${cIndex}` }}</div>
@@ -213,7 +213,11 @@ defineProps({
   },
 });
 
-defineEmits(["cell-click"]);
+const emit = defineEmits(["cell-click"]);
+
+function handleCellClick(rowIndex, colIndex) {
+  emit("cell-click", rowIndex, colIndex);
+}
 </script>
 
 <style scoped>

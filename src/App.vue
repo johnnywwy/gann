@@ -6,12 +6,11 @@
       <ControlPanel
         :form="form"
         :display-options="displayOptions"
-        :search-number="searchNumber"
+        v-model:search-number="searchNumber"
         :selected-value-label="selectedValueLabel"
         :highlight-label="highlightLabel"
         @generate="generateMatrix"
         @highlight="highlightNumber"
-        @update:search-number="searchNumber = $event"
       />
 
       <MatrixBoard
@@ -37,11 +36,10 @@
       :candles="stockCandles"
       :selected-value-label="selectedValueLabel"
       :chart-levels="projectedLevels"
-      :trend-direction="form.trendDirection"
-      @update:stock-symbol="handleStockSymbolChange"
-      @update:trend-direction="form.trendDirection = $event"
-      @select-price="handleMarketPriceSelect"
-      @project-price="handleProjectPrice"
+      v-model:stock-path="selectedStockPath"
+      v-model:trend-direction="form.trendDirection"
+      @price-select="handleMarketPriceSelect"
+      @price-project="handleProjectPrice"
     />
   </div>
 </template>
@@ -115,6 +113,11 @@ const marketForm = reactive({
   timeframe: "day",
   chartHeight: 800,
   swingSmoothDays: 5,
+});
+
+const selectedStockPath = computed({
+  get: () => marketForm.stockPath,
+  set: value => handleStockSymbolChange(value),
 });
 
 const cellSize = computed(() => {

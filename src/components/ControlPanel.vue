@@ -54,7 +54,7 @@
         </div>
       </transition>
 
-      <el-button type="primary" class="primary-action" @click="$emit('generate')">
+      <el-button type="primary" class="primary-action" @click="handleGenerate">
         生成九方图
       </el-button>
     </section>
@@ -67,12 +67,11 @@
 
       <div class="search-row">
         <el-input-number
-          :model-value="searchNumber"
+          v-model="searchNumberModel"
           :min="1"
           class="search-input"
-          @update:model-value="$emit('update:search-number', $event)"
         />
-        <el-button class="search-button" @click="$emit('highlight')">搜索</el-button>
+        <el-button class="search-button" @click="handleHighlight">搜索</el-button>
       </div>
 
       <div class="status-strip">
@@ -123,10 +122,6 @@ defineProps({
     type: Array,
     required: true,
   },
-  searchNumber: {
-    type: Number,
-    default: null,
-  },
   selectedValueLabel: {
     type: [String, Number],
     required: true,
@@ -137,10 +132,23 @@ defineProps({
   },
 });
 
-defineEmits(["generate", "highlight", "update:search-number"]);
+const searchNumberModel = defineModel("searchNumber", {
+  type: Number,
+  default: null,
+});
+const emit = defineEmits(["generate", "highlight"]);
 
 const basicExpanded = ref(false);
 const displayExpanded = ref(false);
+
+function handleGenerate() {
+  emit("generate");
+}
+
+function handleHighlight() {
+  emit("highlight");
+}
+
 </script>
 
 <style scoped>

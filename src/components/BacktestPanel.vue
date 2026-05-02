@@ -15,8 +15,14 @@
       <label class="field-card">
         <span class="field-label">标的</span>
 
-        <el-cascader :model-value="marketForm.stockPath" :options="stockCatalog" placeholder="选择行业 / 标的" clearable
-          filterable style="width: 100%;" @update:model-value="$emit('update:stock-symbol', $event)" />
+        <el-cascader
+          v-model="stockPathModel"
+          :options="stockCatalog"
+          placeholder="选择行业 / 标的"
+          clearable
+          filterable
+          style="width: 100%;"
+        />
       </label>
 
       <div class="field-card price-action-card">
@@ -30,8 +36,10 @@
       <div class="field-card action-card">
         <span class="field-label">趋势方向</span>
         <div class="action-row">
-          <el-segmented :model-value="trendDirection" :options="trendDirectionOptions"
-            @update:model-value="$emit('update:trend-direction', $event)" />
+          <el-segmented
+            v-model="trendDirectionModel"
+            :options="trendDirectionOptions"
+          />
         </div>
       </div>
 
@@ -82,18 +90,20 @@ const props = defineProps({
     type: Array,
     required: true,
   },
-  trendDirection: {
-    type: String,
-    required: true,
-  },
 });
 
 const emit = defineEmits([
-  "select-price",
-  "project-price",
-  "update:stock-symbol",
-  "update:trend-direction",
+  "price-select",
+  "price-project",
 ]);
+const stockPathModel = defineModel("stockPath", {
+  type: Array,
+  default: () => [],
+});
+const trendDirectionModel = defineModel("trendDirection", {
+  type: String,
+  default: "down",
+});
 
 const chartRef = ref(null);
 const LATEST_CANDLE_COUNT = 500;
@@ -354,7 +364,7 @@ function handleChartClick(params) {
 
   const midpoint = (candle.high + candle.low) / 2;
   const closeToHigh = candle.close >= midpoint;
-  emit("select-price", {
+  emit("price-select", {
     price: closeToHigh ? candle.high : candle.low,
     date: candle.date,
     kind: closeToHigh ? "high" : "low",
@@ -365,7 +375,7 @@ function projectFromInput() {
   const price = Number(props.marketForm.anchorPrice);
   if (!Number.isFinite(price) || price <= 0) return;
 
-  emit("project-price", price);
+  emit("price-project", price);
 }
 
 function buildSwingLineData(candles, smoothDays) {
