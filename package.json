@@ -10,7 +10,7 @@
     "stock:catalog": "node scripts/generateStockCatalog.mjs"
   },
   "dependencies": {
-    "echarts": "^5.5.1",
+    "@klinecharts/pro": "^0.1.1",
     "element-plus": "^2.11.5",
     "klinecharts": "^9.8.12",
     "vue": "^3.5.22"

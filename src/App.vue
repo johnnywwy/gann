@@ -112,7 +112,6 @@ const marketForm = reactive({
   priceUnit: 1,
   timeframe: "day",
   chartHeight: 800,
-  swingSmoothDays: 5,
 });
 
 const selectedStockPath = computed({
