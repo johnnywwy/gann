@@ -32,11 +32,10 @@
 
     <BacktestPanel
       :market-form="marketForm"
-      :stock-catalog="stockCatalog"
-      :candles="stockCandles"
       :selected-value-label="selectedValueLabel"
       :chart-levels="projectedLevels"
-      v-model:stock-path="selectedStockPath"
+      v-model:market="marketForm.market"
+      v-model:stock-symbol="marketForm.symbol"
       v-model:trend-direction="form.trendDirection"
       @price-select="handleMarketPriceSelect"
       @price-project="handleProjectPrice"
@@ -45,15 +44,12 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from "vue";
+import { computed, reactive, ref, watch } from "vue";
 import AppHero from "./components/AppHero.vue";
 import BacktestPanel from "./components/BacktestPanel.vue";
 import ControlPanel from "./components/ControlPanel.vue";
 import MatrixBoard from "./components/MatrixBoard.vue";
-import {
-  buildBacktestLevels,
-  parseStockJson,
-} from "./utils/marketBacktest";
+import { buildBacktestLevels } from "./utils/marketBacktest";
 import {
   calculateClickTrend,
   findNumberPosition,
@@ -101,22 +97,12 @@ const lastTrendResult = ref(null);
 const searchNumber = ref(null);
 const highlightPos = ref({ r: -1, c: -1 });
 const BOARD_REFERENCE_SIZE = 680;
-const stockCandles = ref([]);
-const stockCatalog = ref([]);
 const marketForm = reactive({
-  group: "",
-  symbol: "",
-  stockPath: [],
-  datasetPath: "",
+  market: "us",
+  symbol: "AAPL",
   anchorPrice: null,
   priceUnit: 1,
-  timeframe: "day",
-  chartHeight: 800,
-});
-
-const selectedStockPath = computed({
-  get: () => marketForm.stockPath,
-  set: value => handleStockSymbolChange(value),
+  chartHeight: 1200,
 });
 
 const cellSize = computed(() => {
@@ -190,10 +176,13 @@ const projectedLevels = computed(() => {
     priceUnit: marketForm.priceUnit,
   });
 
-  return levels.map(item => ({
-    ...item,
-    price: Math.round(item.price * 10000) / 10000,
-  }));
+  return sortLevelsByTrendDirection(
+    levels.map(item => ({
+      ...item,
+      price: Math.round(item.price * 10000) / 10000,
+    })),
+    form.trendDirection
+  );
 });
 
 /**
@@ -287,22 +276,6 @@ function getCellClass(r, c) {
   };
 }
 
-function handleStockSymbolChange(value) {
-  // value 示例：
-  // ["QUANTUM_COMPUTING", "stockData/IONQ_US.json"]
-
-  const group = value?.[0] || "";
-  const filePath = value?.[1] || "";
-
-  const fileName = filePath.split("/").pop() || "";
-  const symbol = fileName.replace(/\.json$/i, "");
-
-  marketForm.group = group;
-  marketForm.symbol = symbol;
-  marketForm.stockPath = value || [];
-  marketForm.datasetPath = filePath;
-}
-
 function handleMarketPriceSelect(point) {
   ensureMatrixCoversPrice(point.price);
 
@@ -316,6 +289,110 @@ function handleMarketPriceSelect(point) {
 
 function handleProjectPrice(price) {
   handleMarketPriceSelect({ price });
+  logProjectedPriceLevels(price);
+}
+
+function logProjectedPriceLevels(anchorPrice) {
+  const anchor = Number(anchorPrice);
+  const levels = rankProjectedLogLevels(projectedLevels.value, anchor);
+
+  console.group("股票走势推演点位");
+  console.log("输入价格:", anchor);
+  console.log("趋势方向:", form.trendDirection === "up" ? "上升" : "下降");
+  console.log("九方图锚点:", selectedValueLabel.value);
+  console.log("推演点位数量:", levels.length);
+
+  levels.forEach(level => {
+    console.log(
+      `${level.label}: ${level.price}`,
+      {
+        价格: level.price,
+        矩阵值: level.matrixValue,
+        线类型: level.lineType === "main" ? "趋势主线" : "趋势副线",
+        距离输入价: level.distance,
+      }
+    );
+  });
+
+  console.table(levels.map(level => ({
+    名称: level.label,
+    价格: level.price,
+    矩阵值: level.matrixValue,
+    线类型: level.lineType === "main" ? "趋势主线" : "趋势副线",
+    距离输入价: level.distance,
+  })));
+  console.groupEnd();
+}
+
+function rankProjectedLogLevels(levels, anchorPrice) {
+  if (!Number.isFinite(anchorPrice)) return [];
+
+  const deduped = dedupeProjectedLogLevels(levels)
+    .map(level => ({
+      ...level,
+      price: roundMarketPrice(level.price),
+      distance: roundMarketPrice(Math.abs(Number(level.price) - anchorPrice)),
+      kind: Number(level.price) < anchorPrice ? "support" : "resistance",
+    }))
+    .filter(level => Number.isFinite(level.price) && level.price >= 10 && level.distance > 0);
+
+  const supports = assignProjectedLogRanks(
+    deduped.filter(level => level.kind === "support"),
+    "支撑位"
+  );
+  const resistances = assignProjectedLogRanks(
+    deduped.filter(level => level.kind === "resistance"),
+    "阻力位"
+  );
+
+  return sortLevelsByTrendDirection([...supports, ...resistances], form.trendDirection);
+}
+
+function dedupeProjectedLogLevels(levels) {
+  const buckets = new Map();
+
+  (levels || []).forEach(level => {
+    const price = Number(level.price);
+    if (!Number.isFinite(price)) return;
+
+    const key = roundMarketPrice(price);
+    const current = buckets.get(key);
+    const priority = level.lineType === "main" ? 2 : 1;
+
+    if (!current || priority > current.priority) {
+      buckets.set(key, {
+        ...level,
+        price,
+        priority,
+      });
+    }
+  });
+
+  return [...buckets.values()];
+}
+
+function assignProjectedLogRanks(levels, label) {
+  return levels
+    .sort((a, b) => a.distance - b.distance)
+    .map((level, index) => ({
+      ...level,
+      rank: index + 1,
+      label: `第${index + 1}${label}`,
+    }));
+}
+
+function roundMarketPrice(value) {
+  return Math.round(Number(value) * 10000) / 10000;
+}
+
+function sortLevelsByTrendDirection(levels, direction) {
+  return [...(levels || [])].sort((a, b) => {
+    const left = Number(a.price);
+    const right = Number(b.price);
+
+    if (!Number.isFinite(left) || !Number.isFinite(right)) return 0;
+    return direction === "down" ? right - left : left - right;
+  });
 }
 
 function ensureMatrixCoversPrice(price) {
@@ -333,44 +410,6 @@ function ensureMatrixCoversPrice(price) {
     min = Math.min(...values);
     max = Math.max(...values);
   }
-}
-
-/**
- * Load local JSON daily candles for the selected symbol and dataset.
- */
-async function loadSelectedStockData() {
-  if (!marketForm.datasetPath) return;
-
-  const response = await fetch(resolvePublicPath(marketForm.datasetPath));
-  const raw = await response.json();
-  stockCandles.value = parseStockJson(raw);
-}
-
-async function loadStockCatalog() {
-  const response = await fetch(resolvePublicPath("stockData/catalog.json"));
-  const catalog = await response.json();
-
-  stockCatalog.value = Array.isArray(catalog) ? catalog : [];
-
-  if (!marketForm.datasetPath && stockCatalog.value.length) {
-    const firstGroup = stockCatalog.value.find(group => {
-      return Array.isArray(group.children) && group.children.length > 0;
-    });
-
-    const firstStock = firstGroup?.children?.[0];
-
-    if (firstGroup && firstStock) {
-      handleStockSymbolChange([
-        firstGroup.value,
-        firstStock.value
-      ]);
-    }
-  }
-}
-
-function resolvePublicPath(path) {
-  const base = import.meta.env.BASE_URL || "/";
-  return `${base}${String(path).replace(/^\/+/, "")}`;
 }
 
 function findNearestMatrixPoint(price) {
@@ -393,17 +432,9 @@ function findNearestMatrixPoint(price) {
 
 generateMatrix();
 
-watch(() => marketForm.datasetPath, () => {
-  loadSelectedStockData();
-});
-
 watch(() => form.trendDirection, () => {
   if (!selectedCell.value) return;
   calculateTrendFromCell(selectedCell.value.r, selectedCell.value.c);
-});
-
-onMounted(() => {
-  loadStockCatalog();
 });
 </script>
 

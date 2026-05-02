@@ -13,62 +13,63 @@
 
     <div class="toolbar-grid">
       <label class="field-card">
-        <span class="field-label">标的</span>
-        <el-cascader
-          v-model="stockPathModel"
-          :options="stockCatalog"
-          placeholder="选择行业 / 标的"
+        <span class="field-label">市场</span>
+        <el-select v-model="marketModel" placeholder="选择市场" size="large">
+          <el-option
+            v-for="option in marketOptions"
+            :key="option.value"
+            :label="option.label"
+            :value="option.value"
+          />
+        </el-select>
+      </label>
+
+      <label class="field-card symbol-card">
+        <span class="field-label">股票代码</span>
+        <el-input
+          v-model.trim="stockSymbolModel"
+          placeholder="AAPL / 600519 / 00700"
           clearable
-          filterable
-          style="width: 100%;"
+          size="large"
         />
       </label>
 
       <div class="field-card price-action-card">
         <span class="field-label">价格点位</span>
         <div class="price-action-row">
-          <el-input-number v-model="marketForm.anchorPrice" :precision="0" :step="1" :min="0" />
-          <el-button type="primary" @click="projectFromInput">推演</el-button>
+          <el-input-number v-model="marketForm.anchorPrice" :precision="0" :step="1" :min="0" size="large" />
+          <el-button type="primary" size="large" @click="projectFromInput">推演</el-button>
         </div>
       </div>
 
       <div class="field-card action-card">
         <span class="field-label">趋势方向</span>
-        <el-segmented v-model="trendDirectionModel" :options="trendDirectionOptions" />
+        <el-segmented v-model="trendDirectionModel" :options="trendDirectionOptions" size="large" />
       </div>
-
-      <label class="field-card">
-        <span class="field-label">K线高度</span>
-        <el-slider v-model="marketForm.chartHeight" :min="500" :max="3000" :step="20" />
-      </label>
     </div>
 
     <KLineChartView
       class="chart-shell"
       :symbol="marketForm.symbol || 'STOCK'"
-      :candles="candles"
+      :market="marketModel"
       :levels="rankedChartLevels"
       :height="marketForm.chartHeight"
+      :period="activePeriod"
+      :chart-settings="chartSettings"
+      :price-indicators="priceIndicators"
+      :sub-indicators="subIndicators"
       @candle-select="handleCandleSelect"
     />
   </section>
 </template>
 
 <script setup>
-import { computed } from "vue";
+import { computed, reactive, ref } from "vue";
 import KLineChartView from "./KLineChartView.vue";
 
 const props = defineProps({
   marketForm: {
     type: Object,
-    required: true,
-  },
-  stockCatalog: {
-    type: Array,
-    required: true,
-  },
-  candles: {
-    type: Array,
     required: true,
   },
   selectedValueLabel: {
@@ -82,20 +83,43 @@ const props = defineProps({
 });
 
 const emit = defineEmits(["price-select", "price-project"]);
-const stockPathModel = defineModel("stockPath", {
-  type: Array,
-  default: () => [],
+const marketModel = defineModel("market", {
+  type: String,
+  default: "us",
+});
+const stockSymbolModel = defineModel("stockSymbol", {
+  type: String,
+  default: "AAPL",
 });
 const trendDirectionModel = defineModel("trendDirection", {
   type: String,
   default: "down",
 });
 
+const marketOptions = [
+  { label: "美股", value: "us" },
+  { label: "A股", value: "cn" },
+  { label: "港股", value: "hk" },
+];
 const trendDirectionOptions = [
   { label: "上升", value: "up" },
   { label: "下降", value: "down" },
 ];
+const periodKey = ref("1d");
+const priceIndicators = ref(["MA"]);
+const subIndicators = ref(["VOL", "MACD"]);
+const chartSettings = reactive({
+  barSpace: 8,
+  rightSpace: 86,
+  pricePrecision: 2,
+  yAxisType: "normal",
+  yAxisPosition: "right",
+  yAxisReverse: false,
+  zoomEnabled: true,
+  scrollEnabled: true,
+});
 
+const activePeriod = computed(() => parsePeriod(periodKey.value));
 const rankedChartLevels = computed(() => (
   rankProjectedLevels(props.chartLevels, props.marketForm.anchorPrice)
 ));
@@ -109,6 +133,19 @@ function projectFromInput() {
 
 function handleCandleSelect(point) {
   emit("price-select", point);
+}
+
+function parsePeriod(value) {
+  const periodMap = {
+    "1m": { multiplier: 1, timespan: "minute", text: "1分钟" },
+    "3m": { multiplier: 3, timespan: "minute", text: "3分钟" },
+    "5m": { multiplier: 5, timespan: "minute", text: "5分钟" },
+    "10m": { multiplier: 10, timespan: "minute", text: "10分钟" },
+    "15m": { multiplier: 15, timespan: "minute", text: "15分钟" },
+    "1w": { multiplier: 1, timespan: "week", text: "周线" },
+    "1M": { multiplier: 1, timespan: "month", text: "月线" },
+  };
+  return periodMap[value] || { multiplier: 1, timespan: "day", text: "日线" };
 }
 
 function rankProjectedLevels(levels, anchorPrice) {
@@ -234,11 +271,12 @@ h2 {
 
 .toolbar-grid {
   display: grid;
-  grid-template-columns: 1.1fr 1.55fr 1fr 1fr;
+  grid-template-columns: 0.78fr 1.12fr 1.35fr 0.88fr;
   gap: 10px;
 }
 
-.field-card {
+.field-card,
+.control-block {
   display: grid;
   gap: 9px;
   padding: 12px;
@@ -251,7 +289,7 @@ h2 {
 
 .price-action-row {
   display: grid;
-  grid-template-columns: minmax(120px, 1fr) auto;
+  grid-template-columns: minmax(150px, 1fr) auto;
   gap: 8px;
   align-items: center;
 }
@@ -263,30 +301,16 @@ h2 {
   width: 100%;
 }
 
-:deep(.el-input-number .el-input__wrapper),
-:deep(.el-select__wrapper),
-:deep(.el-segmented),
-:deep(.el-button) {
-  min-height: 44px;
-}
-
-:deep(.el-input__inner),
-:deep(.el-select__placeholder),
-:deep(.el-segmented__item-label),
-:deep(.el-button) {
-  font-size: 15px;
-  font-weight: 700;
-}
-
 .chart-shell {
   padding: 8px;
   overflow: hidden;
 }
 
-@media (max-width: 1080px) {
+@media (max-width: 1180px) {
   .toolbar-grid {
     grid-template-columns: 1fr 1fr;
   }
+
 }
 
 @media (max-width: 640px) {
@@ -307,6 +331,10 @@ h2 {
 
   .anchor-card {
     text-align: left;
+  }
+
+  .price-action-row {
+    grid-template-columns: 1fr;
   }
 }
 </style>

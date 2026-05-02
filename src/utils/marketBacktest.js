@@ -50,38 +50,6 @@ export function parseOhlcCsv(text) {
 }
 
 /**
- * Normalize the local JSON daily-bar format used under public/stockData.
- */
-export function parseStockJson(raw) {
-  const source = typeof raw === "string" ? JSON.parse(raw) : raw;
-  const rows = flattenStockRows(source);
-
-  return rows
-    .map(item => {
-      const date = String(item.timestamp ?? item.date ?? "").slice(0, 10);
-      const open = toNumber(item.open);
-      const high = toNumber(item.high);
-      const low = toNumber(item.low);
-      const close = toNumber(item.close);
-      const volume = toNumber(item.volume);
-
-      if (!date || !Number.isFinite(high) || !Number.isFinite(low) || !Number.isFinite(close)) {
-        return null;
-      }
-
-      return {
-        date,
-        open: Number.isFinite(open) ? open : close,
-        high,
-        low,
-        close,
-        volume: Number.isFinite(volume) ? volume : 0,
-      };
-    })
-    .filter(Boolean);
-}
-
-/**
  * Group daily candles by calendar year for yearly review.
  */
 export function getCandleYears(candles) {
@@ -257,25 +225,6 @@ function roundPrice(value) {
 function toNumber(value) {
   const parsed = Number(String(value ?? "").replace(/,/g, "").trim());
   return Number.isFinite(parsed) ? parsed : NaN;
-}
-
-function flattenStockRows(source) {
-  if (Array.isArray(source)) {
-    return source.flatMap(item => {
-      if (Array.isArray(item)) return flattenStockRows(item);
-      if (Array.isArray(item?.data)) return flattenStockRows(item.data);
-      if (Array.isArray(item?.candles)) return flattenStockRows(item.candles);
-      if (Array.isArray(item?.items)) return flattenStockRows(item.items);
-      return [item];
-    });
-  }
-
-  if (Array.isArray(source?.data)) return flattenStockRows(source.data);
-  if (Array.isArray(source?.candles)) return flattenStockRows(source.candles);
-  if (Array.isArray(source?.items)) return flattenStockRows(source.items);
-  if (Array.isArray(source?.segments)) return flattenStockRows(source.segments);
-
-  return [];
 }
 
 function getWeekStart(dateText) {
