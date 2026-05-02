@@ -596,16 +596,63 @@ function renderLevelOverlays() {
   console.log("九方图推演价格线:", overlays.map(item => item.extendData), ids);
 }
 
-function getRightAnchorPoint(chartList) {
-  if (!chartList.length) return null;
+const PRICE_LINE_LABEL_POSITION = 0.05; // 你现在想放在左侧 15%
+const PRICE_AXIS_WIDTH = 64; // 右侧价格轴宽度，按你的 UI 可以微调 56~72
 
-  const visibleRange = chartApi?.getVisibleRange?.();
-  const from = Math.max(0, Math.floor(visibleRange?.from ?? 0));
-  const to = Math.min(chartList.length - 1, Math.ceil(visibleRange?.to ?? chartList.length - 1));
-  const index = Math.min(Math.max(0, from + Math.floor((to - from) * 0.25)), chartList.length - 1);
+function getRightAnchorPoint(chartList) {
+  if (!chartList.length || !chartApi || !chartHost.value) return null;
+
+  const hostRect = chartHost.value.getBoundingClientRect();
+
+  // 右侧价格轴不属于 K 线绘图区
+  const yAxisWidth = activeChartSettings.yAxisPosition === "right"
+    ? PRICE_AXIS_WIDTH
+    : 0;
+
+  // 右侧留白是你希望保留的空白区域，但它没有真实 K 线
+  const rightBlankWidth = Number(activeChartSettings.rightSpace ?? 86);
+
+  // 真正有 K 线的可视绘图区宽度
+  const realKLineWidth = Math.max(
+    0,
+    hostRect.width - yAxisWidth - rightBlankWidth
+  );
+
+  if (!realKLineWidth) return null;
+
+  // 在“真实 K 线区域”里取 15%，不要把右侧空白算进去
+  const targetX = Math.round(realKLineWidth * PRICE_LINE_LABEL_POSITION);
+
+  // 把像素 x 转成图表数据位置
+  const point = chartApi.convertFromPixel?.(
+    { x: targetX },
+    { paneId: "candle_pane" }
+  );
+
+  let index = Math.round(Number(point?.dataIndex));
+
+  if (!Number.isFinite(index)) {
+    // 兜底：convertFromPixel 不可用时，才退回 visibleRange
+    const visibleRange = chartApi?.getVisibleRange?.();
+    const from = Math.max(0, Math.floor(visibleRange?.from ?? 0));
+    const to = Math.min(
+      chartList.length - 1,
+      Math.ceil(visibleRange?.to ?? chartList.length - 1)
+    );
+
+    index = from + Math.floor((to - from) * PRICE_LINE_LABEL_POSITION);
+  }
+
+  index = Math.min(Math.max(0, index), chartList.length - 1);
+
   const candle = chartList[index];
 
-  return candle?.timestamp ? { dataIndex: index, timestamp: candle.timestamp } : null;
+  return candle?.timestamp
+    ? {
+        dataIndex: index,
+        timestamp: candle.timestamp,
+      }
+    : null;
 }
 
 function createPriceLineOverlay(level, anchorPoint) {
