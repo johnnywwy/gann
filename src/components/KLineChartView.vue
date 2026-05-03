@@ -182,7 +182,15 @@
             </svg>
           </button>
       </aside>
-      <div ref="chartHost" class="kline-host"></div>
+      <div class="kline-chart-stage">
+        <div ref="chartHost" class="kline-host"></div>
+        <transition name="chart-loading-fade">
+          <div v-if="isChartLoading" class="chart-loading-mask">
+            <span class="chart-loading-spinner"></span>
+            <span class="chart-loading-text">加载 K 线中</span>
+          </div>
+        </transition>
+      </div>
     </div>
   </div>
 </template>
@@ -256,6 +264,7 @@ const activeDrawingTool = ref("");
 const overlayMode = ref("normal");
 const overlaysLocked = ref(false);
 const manualOverlaysVisible = ref(true);
+const isChartLoading = ref(false);
 const activeChartSettings = reactive({
   barSpace: props.chartSettings.barSpace ?? 8,
   rightSpace: props.chartSettings.rightSpace ?? 86,
@@ -481,18 +490,29 @@ async function reloadChartData() {
   if (!chartApi) return;
 
   const currentRequest = ++requestSerial;
+  isChartLoading.value = true;
   chartApi.removeOverlay({ groupId: "gann-levels" });
   chartApi.clearData?.();
 
-  const range = getInitialRange(activePeriod.value);
-  const data = await fetchCloudKLineData(symbolInfo.value, activePeriod.value, range.from, range.to);
-  if (currentRequest !== requestSerial || !chartApi) return;
+  try {
+    const range = getInitialRange(activePeriod.value);
+    const data = await fetchCloudKLineData(symbolInfo.value, activePeriod.value, range.from, range.to);
+    if (currentRequest !== requestSerial || !chartApi) return;
 
-  chartApi.applyNewData(data, false);
-  resetIndicators();
-  chartApi.scrollToRealTime?.(0);
-  chartApi.resize?.();
-  scheduleLevelOverlayRender();
+    chartApi.applyNewData(data, false);
+    resetIndicators();
+    chartApi.scrollToRealTime?.(0);
+    chartApi.resize?.();
+    scheduleLevelOverlayRender();
+  } catch (error) {
+    if (currentRequest === requestSerial) {
+      console.error("K 线数据加载失败:", error);
+    }
+  } finally {
+    if (currentRequest === requestSerial) {
+      isChartLoading.value = false;
+    }
+  }
 }
 
 function applyChartSettings() {
@@ -1312,6 +1332,60 @@ const indicatorParams = {
   height: 100%;
   min-height: 0;
   overflow: hidden;
+}
+
+.kline-chart-stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.chart-loading-mask {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: rgba(255, 255, 255, 0.66);
+  color: #1f2a44;
+  font-size: 14px;
+  font-weight: 700;
+  pointer-events: none;
+  backdrop-filter: blur(2px);
+}
+
+.chart-loading-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(47, 91, 255, 0.18);
+  border-top-color: #2f5bff;
+  border-radius: 999px;
+  animation: chart-spin 0.8s linear infinite;
+}
+
+.chart-loading-text {
+  line-height: 1;
+}
+
+.chart-loading-fade-enter-active,
+.chart-loading-fade-leave-active {
+  transition: opacity 0.16s ease;
+}
+
+.chart-loading-fade-enter-from,
+.chart-loading-fade-leave-to {
+  opacity: 0;
+}
+
+@keyframes chart-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 :deep(.el-checkbox-button__inner) {

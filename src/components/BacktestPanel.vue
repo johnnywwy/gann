@@ -316,9 +316,19 @@ function toBackendStockGroupKey(value) {
 }
 
 function selectStock(stock) {
-  props.marketForm.anchorPrice = null;
-  marketModel.value = stock.market;
-  stockSymbolModel.value = stock.symbol;
+  const nextMarket = stock.market;
+  const nextSymbol = stock.symbol;
+  const isSameStock = (
+    nextMarket === marketModel.value &&
+    String(nextSymbol || "").toUpperCase() === String(stockSymbolModel.value || "").toUpperCase()
+  );
+
+  if (!isSameStock) {
+    props.marketForm.anchorPrice = null;
+  }
+
+  marketModel.value = nextMarket;
+  stockSymbolModel.value = nextSymbol;
   selectedStockDisplayName.value = stock.displayName || stock.name || stock.symbol;
 }
 
