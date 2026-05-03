@@ -86,7 +86,7 @@
       </el-popover>
     </div>
 
-    <div class="kline-body" :style="{ height: `${height}px` }">
+    <div class="kline-body" :class="{ collapsed: drawingCollapsed }" :style="{ height: `${height}px` }">
       <aside v-if="!drawingCollapsed" class="drawing-bar">
           <el-popover
             v-for="group in drawingGroups"
@@ -234,6 +234,14 @@ let overlayRetryCount = 0;
 let requestSerial = 0;
 let indicatorPaneIds = [];
 
+const MARKET_API_BASE = (
+  import.meta.env.VITE_MARKET_API_BASE
+  || import.meta.env.VITE_MARKET_PROXY_PREFIX
+  || "/api/n1-market"
+).replace(/\/$/, "");
+const MARKET_KLINE_COUNT = Number(import.meta.env.VITE_MARKET_KLINE_COUNT) || 1000;
+const YAHOO_PROXY_PREFIX = (import.meta.env.VITE_YAHOO_PROXY_PREFIX || "/api/yahoo").replace(/\/$/, "");
+
 const symbolInfo = computed(() => createSymbolInfo(props.symbol, props.market));
 const periodKey = ref(periodToKey(props.period));
 const activePriceIndicators = ref([...props.priceIndicators]);
@@ -256,16 +264,17 @@ const activeChartSettings = reactive({
 const activePeriod = computed(() => parsePeriod(periodKey.value));
 
 const periodOptions = [
-  { label: "1", value: "1m" },
-  { label: "5", value: "5m" },
-  { label: "15", value: "15m" },
+  { label: "1分", value: "1m" },
+  { label: "3分", value: "3m" },
+  { label: "5分", value: "5m" },
+  { label: "15分", value: "15m" },
   { label: "1小时", value: "1h" },
-  { label: "2小时", value: "2h" },
+  { label: "3小时", value: "3h" },
   { label: "4小时", value: "4h" },
-  { label: "日", value: "1d" },
-  { label: "周", value: "1w" },
-  { label: "月", value: "1M" },
-  { label: "年", value: "1y" },
+  { label: "日", value: "day" },
+  { label: "月", value: "month" },
+  { label: "季", value: "quarter" },
+  { label: "年", value: "year" },
 ];
 const priceIndicatorOptions = ["MA", "EMA", "SMA", "BBI", "BOLL", "SAR"];
 const subIndicatorOptions = [
@@ -376,6 +385,10 @@ watch(
     nextTick(() => chartApi?.resize?.());
   }
 );
+
+watch(drawingCollapsed, () => {
+  nextTick(() => chartApi?.resize?.());
+});
 
 watch(
   () => props.chartSettings,
@@ -730,31 +743,24 @@ async function fetchCloudKLineData(symbol, period, from, to) {
 }
 
 async function fetchCustomCloudData(symbol, period, from, to) {
-  const apiBase = import.meta.env.VITE_MARKET_API_BASE;
-  if (!apiBase) return [];
-
-  const range = normalizeQueryRange(from, to);
   const origin = globalThis.location?.origin || "http://localhost";
-  const url = new URL(apiBase, origin);
-  url.searchParams.set("symbol", symbol.name || symbol.ticker);
-  url.searchParams.set("ticker", symbol.ticker);
-  url.searchParams.set("market", props.market);
-  url.searchParams.set("period", period.timespan);
-  url.searchParams.set("multiplier", period.multiplier);
-  url.searchParams.set("from", range.from);
-  url.searchParams.set("to", range.to);
+  const url = new URL(
+    `${MARKET_API_BASE}/api/kline/${getMarketPeriodPath(period)}/${encodeURIComponent(toMarketDataSymbol(symbol))}`,
+    origin
+  );
+  url.searchParams.set("count", String(MARKET_KLINE_COUNT));
 
   const response = await fetch(url.toString());
   if (!response.ok) return [];
 
   const json = await response.json();
-  return normalizeCloudRows(json?.data || json?.items || json?.candles || json);
+  return normalizeCloudRows(getCloudKLineRows(json));
 }
 
 async function fetchYahooKLineData(symbol, period, from, to) {
   const interval = getYahooInterval(period);
   const { from: period1, to: period2 } = normalizeQueryRange(from, to);
-  const url = `/api/yahoo/v8/finance/chart/${encodeURIComponent(symbol.ticker)}?period1=${period1}&period2=${period2}&interval=${interval}&events=history`;
+  const url = `${YAHOO_PROXY_PREFIX}/v8/finance/chart/${encodeURIComponent(symbol.ticker)}?period1=${period1}&period2=${period2}&interval=${interval}&events=history`;
   const response = await fetch(url);
   if (!response.ok) return [];
 
@@ -779,19 +785,56 @@ function normalizeYahooChart(result) {
     .filter(isValidKLineData);
 }
 
+function getCloudKLineRows(json) {
+  return json?.data?.klines
+    || json?.data?.items
+    || json?.data?.candles
+    || json?.klines
+    || json?.items
+    || json?.candles
+    || json?.data
+    || json;
+}
+
 function normalizeCloudRows(rows) {
   return (Array.isArray(rows) ? rows : [])
-    .map(item => ({
-      timestamp: normalizeTimestamp(item.timestamp ?? item.time ?? item.date),
-      open: Number(item.open ?? item.o),
-      high: Number(item.high ?? item.h),
-      low: Number(item.low ?? item.l),
-      close: Number(item.close ?? item.c),
-      volume: Number(item.volume ?? item.vol ?? item.v) || 0,
-      turnover: Number(item.turnover ?? item.amount) || 0,
-    }))
+    .map(normalizeCloudRow)
     .filter(isValidKLineData)
     .sort((a, b) => a.timestamp - b.timestamp);
+}
+
+function normalizeCloudRow(item) {
+  if (typeof item === "string") {
+    const fields = item.split(",");
+    return normalizeCloudArrayRow(fields);
+  }
+
+  if (Array.isArray(item)) {
+    return normalizeCloudArrayRow(item);
+  }
+
+  return {
+    timestamp: normalizeTimestamp(item.timestamp ?? item.time ?? item.date ?? item.day),
+    open: Number(item.open ?? item.o),
+    high: Number(item.high ?? item.h),
+    low: Number(item.low ?? item.l),
+    close: Number(item.close ?? item.c),
+    volume: Number(item.volume ?? item.vol ?? item.v) || 0,
+    turnover: Number(item.turnover ?? item.amount ?? item.amt) || 0,
+  };
+}
+
+function normalizeCloudArrayRow(fields) {
+  const [date, open, close, high, low, volume, turnover] = fields;
+  return {
+    timestamp: normalizeTimestamp(date),
+    open: Number(open),
+    high: Number(high),
+    low: Number(low),
+    close: Number(close),
+    volume: Number(volume) || 0,
+    turnover: Number(turnover) || 0,
+  };
 }
 
 function isValidKLineData(item) {
@@ -807,7 +850,8 @@ function getInitialRange(period) {
   const isMinute = period?.timespan === "minute";
   const isHour = period?.timespan === "hour";
   const isYear = period?.timespan === "year";
-  const from = to - 86400 * 1000 * (isMinute ? 60 : isHour ? 365 : isYear ? 365 * 12 : 365 * 5);
+  const isQuarter = period?.timespan === "quarter";
+  const from = to - 86400 * 1000 * (isMinute ? 60 : isHour ? 365 : isYear || isQuarter ? 365 * 12 : 365 * 5);
   return { from, to };
 }
 
@@ -845,34 +889,53 @@ function normalizeTimestamp(value) {
 function getYahooInterval(period) {
   if (period?.timespan === "minute") return `${period.multiplier || 1}m`;
   if (period?.timespan === "hour") return `${period.multiplier || 1}h`;
-  if (period?.timespan === "year") return "3mo";
+  if (period?.timespan === "year" || period?.timespan === "quarter") return "3mo";
   if (period?.timespan === "week") return "1wk";
   if (period?.timespan === "month") return "1mo";
   return "1d";
 }
 
+function getMarketPeriodPath(period) {
+  return period?.apiPeriod || "day";
+}
+
 function parsePeriod(value) {
   const periodMap = {
-    "1m": { multiplier: 1, timespan: "minute", text: "1分钟" },
-    "5m": { multiplier: 5, timespan: "minute", text: "5分钟" },
-    "15m": { multiplier: 15, timespan: "minute", text: "15分钟" },
-    "1h": { multiplier: 1, timespan: "hour", text: "1小时" },
-    "2h": { multiplier: 2, timespan: "hour", text: "2小时" },
-    "4h": { multiplier: 4, timespan: "hour", text: "4小时" },
-    "1w": { multiplier: 1, timespan: "week", text: "周线" },
-    "1M": { multiplier: 1, timespan: "month", text: "月线" },
-    "1y": { multiplier: 1, timespan: "year", text: "年线" },
+    "1m": { multiplier: 1, timespan: "minute", text: "1分钟", apiPeriod: "1m" },
+    "2m": { multiplier: 2, timespan: "minute", text: "2分钟", apiPeriod: "2m" },
+    "3m": { multiplier: 3, timespan: "minute", text: "3分钟", apiPeriod: "3m" },
+    "5m": { multiplier: 5, timespan: "minute", text: "5分钟", apiPeriod: "5m" },
+    "10m": { multiplier: 10, timespan: "minute", text: "10分钟", apiPeriod: "10m" },
+    "15m": { multiplier: 15, timespan: "minute", text: "15分钟", apiPeriod: "15m" },
+    "20m": { multiplier: 20, timespan: "minute", text: "20分钟", apiPeriod: "20m" },
+    "30m": { multiplier: 30, timespan: "minute", text: "30分钟", apiPeriod: "30m" },
+    "45m": { multiplier: 45, timespan: "minute", text: "45分钟", apiPeriod: "45m" },
+    "1h": { multiplier: 1, timespan: "hour", text: "1小时", apiPeriod: "1h" },
+    "2h": { multiplier: 2, timespan: "hour", text: "2小时", apiPeriod: "2h" },
+    "3h": { multiplier: 3, timespan: "hour", text: "3小时", apiPeriod: "3h" },
+    "4h": { multiplier: 4, timespan: "hour", text: "4小时", apiPeriod: "4h" },
+    "day": { multiplier: 1, timespan: "day", text: "日线", apiPeriod: "day" },
+    "1d": { multiplier: 1, timespan: "day", text: "日线", apiPeriod: "day" },
+    "week": { multiplier: 1, timespan: "week", text: "周线", apiPeriod: "week" },
+    "1w": { multiplier: 1, timespan: "week", text: "周线", apiPeriod: "week" },
+    "month": { multiplier: 1, timespan: "month", text: "月线", apiPeriod: "month" },
+    "1M": { multiplier: 1, timespan: "month", text: "月线", apiPeriod: "month" },
+    "quarter": { multiplier: 1, timespan: "quarter", text: "季线", apiPeriod: "quarter" },
+    "year": { multiplier: 1, timespan: "year", text: "年线", apiPeriod: "year" },
+    "1y": { multiplier: 1, timespan: "year", text: "年线", apiPeriod: "year" },
   };
-  return periodMap[value] || { multiplier: 1, timespan: "day", text: "日线" };
+  return periodMap[value] || periodMap.day;
 }
 
 function periodToKey(period) {
+  if (period?.apiPeriod) return period.apiPeriod;
   if (period?.timespan === "minute") return `${period.multiplier || 1}m`;
   if (period?.timespan === "hour") return `${period.multiplier || 1}h`;
-  if (period?.timespan === "week") return "1w";
-  if (period?.timespan === "month") return "1M";
-  if (period?.timespan === "year") return "1y";
-  return "1d";
+  if (period?.timespan === "week") return "week";
+  if (period?.timespan === "month") return "month";
+  if (period?.timespan === "quarter") return "quarter";
+  if (period?.timespan === "year") return "year";
+  return "day";
 }
 
 function createIndicatorPayload(name) {
@@ -908,6 +971,22 @@ function toYahooSymbol(symbol, market) {
   }
 
   return symbol;
+}
+
+function toMarketDataSymbol(symbol) {
+  const raw = String(symbol.name || symbol.ticker || "").trim().toUpperCase();
+  if (raw.includes(".")) return raw;
+
+  if (symbol.market === "hk") {
+    const digits = raw.replace(/\D/g, "");
+    return `${String(Number(digits || 0)).padStart(4, "0")}.HK`;
+  }
+
+  if (symbol.market === "cn") {
+    return `${raw}.${raw.startsWith("6") ? "SH" : "SZ"}`;
+  }
+
+  return `${raw}.US`;
 }
 
 function formatPrice(value) {
@@ -1070,6 +1149,9 @@ const indicatorParams = {
 }
 
 .toolbar-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   height: 30px;
   margin: 0 3px;
   padding: 0 9px;
@@ -1079,6 +1161,8 @@ const indicatorParams = {
   color: #344054;
   font-size: 13px;
   font-weight: 700;
+  line-height: 30px;
+  white-space: nowrap;
   cursor: pointer;
 }
 
@@ -1092,6 +1176,10 @@ const indicatorParams = {
   margin-left: 10px;
 }
 
+.period-button {
+  min-width: 30px;
+}
+
 .tool-entry {
   margin-left: 8px;
   border-left: 1px solid #ebedf1;
@@ -1102,6 +1190,10 @@ const indicatorParams = {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   min-height: 520px;
+}
+
+.kline-body.collapsed {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .drawing-bar {

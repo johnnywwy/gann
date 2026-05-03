@@ -27,10 +27,11 @@
       <label class="field-card symbol-card">
         <span class="field-label">股票代码</span>
         <el-input
-          v-model.trim="stockSymbolModel"
+          v-model.trim="stockSymbolDraft"
           placeholder="AAPL / 600519 / 00700"
           clearable
           size="large"
+          @blur="commitStockSymbol"
         />
       </label>
 
@@ -64,7 +65,7 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from "vue";
+import { computed, reactive, ref, watch } from "vue";
 import KLineChartView from "./KLineChartView.vue";
 
 const props = defineProps({
@@ -105,7 +106,7 @@ const trendDirectionOptions = [
   { label: "上升", value: "up" },
   { label: "下降", value: "down" },
 ];
-const periodKey = ref("1d");
+const periodKey = ref("day");
 const priceIndicators = ref(["MA"]);
 const subIndicators = ref(["VOL", "MACD"]);
 const chartSettings = reactive({
@@ -119,10 +120,26 @@ const chartSettings = reactive({
   scrollEnabled: true,
 });
 
+const stockSymbolDraft = ref(stockSymbolModel.value);
 const activePeriod = computed(() => parsePeriod(periodKey.value));
 const rankedChartLevels = computed(() => (
   rankProjectedLevels(props.chartLevels, props.marketForm.anchorPrice)
 ));
+
+watch(stockSymbolModel, value => {
+  if (value !== stockSymbolDraft.value) {
+    stockSymbolDraft.value = value;
+  }
+});
+
+function commitStockSymbol() {
+  const nextSymbol = String(stockSymbolDraft.value || "").trim().toUpperCase();
+  stockSymbolDraft.value = nextSymbol;
+
+  if (nextSymbol !== stockSymbolModel.value) {
+    stockSymbolModel.value = nextSymbol;
+  }
+}
 
 function projectFromInput() {
   const price = Number(props.marketForm.anchorPrice);
@@ -137,15 +154,26 @@ function handleCandleSelect(point) {
 
 function parsePeriod(value) {
   const periodMap = {
-    "1m": { multiplier: 1, timespan: "minute", text: "1分钟" },
-    "3m": { multiplier: 3, timespan: "minute", text: "3分钟" },
-    "5m": { multiplier: 5, timespan: "minute", text: "5分钟" },
-    "10m": { multiplier: 10, timespan: "minute", text: "10分钟" },
-    "15m": { multiplier: 15, timespan: "minute", text: "15分钟" },
-    "1w": { multiplier: 1, timespan: "week", text: "周线" },
-    "1M": { multiplier: 1, timespan: "month", text: "月线" },
+    "1m": { multiplier: 1, timespan: "minute", text: "1分钟", apiPeriod: "1m" },
+    "2m": { multiplier: 2, timespan: "minute", text: "2分钟", apiPeriod: "2m" },
+    "3m": { multiplier: 3, timespan: "minute", text: "3分钟", apiPeriod: "3m" },
+    "5m": { multiplier: 5, timespan: "minute", text: "5分钟", apiPeriod: "5m" },
+    "10m": { multiplier: 10, timespan: "minute", text: "10分钟", apiPeriod: "10m" },
+    "15m": { multiplier: 15, timespan: "minute", text: "15分钟", apiPeriod: "15m" },
+    "20m": { multiplier: 20, timespan: "minute", text: "20分钟", apiPeriod: "20m" },
+    "30m": { multiplier: 30, timespan: "minute", text: "30分钟", apiPeriod: "30m" },
+    "45m": { multiplier: 45, timespan: "minute", text: "45分钟", apiPeriod: "45m" },
+    "1h": { multiplier: 1, timespan: "hour", text: "1小时", apiPeriod: "1h" },
+    "2h": { multiplier: 2, timespan: "hour", text: "2小时", apiPeriod: "2h" },
+    "3h": { multiplier: 3, timespan: "hour", text: "3小时", apiPeriod: "3h" },
+    "4h": { multiplier: 4, timespan: "hour", text: "4小时", apiPeriod: "4h" },
+    "day": { multiplier: 1, timespan: "day", text: "日线", apiPeriod: "day" },
+    "week": { multiplier: 1, timespan: "week", text: "周线", apiPeriod: "week" },
+    "month": { multiplier: 1, timespan: "month", text: "月线", apiPeriod: "month" },
+    "quarter": { multiplier: 1, timespan: "quarter", text: "季线", apiPeriod: "quarter" },
+    "year": { multiplier: 1, timespan: "year", text: "年线", apiPeriod: "year" },
   };
-  return periodMap[value] || { multiplier: 1, timespan: "day", text: "日线" };
+  return periodMap[value] || periodMap.day;
 }
 
 function rankProjectedLevels(levels, anchorPrice) {
