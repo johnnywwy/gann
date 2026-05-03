@@ -170,10 +170,11 @@ const projectedLevels = computed(() => {
   const anchorPrice = Number(marketForm.anchorPrice);
   if (!Number.isFinite(anchorPrice) || anchorPrice <= 0) return [];
 
+  const chartTrendLines = getChartTrendLines(lastTrendResult.value);
   const levels = buildBacktestLevels({
     clickedValue: lastTrendResult.value.clickedValue,
-    trendMain: lastTrendResult.value.trendMain,
-    trendCross: lastTrendResult.value.trendCross,
+    trendMain: chartTrendLines.trendMain,
+    trendCross: chartTrendLines.trendCross,
     matrixStep: form.step,
     anchorPrice: marketForm.anchorPrice,
     priceUnit: marketForm.priceUnit,
@@ -187,6 +188,35 @@ const projectedLevels = computed(() => {
     form.trendDirection
   );
 });
+
+/**
+ * 为 K 线价格线准备独立的趋势点集合。
+ * 九方图高亮继续使用 trendMain/trendCross；上升推演需要把主线和副线上所有更高点位也画到 K 线。
+ */
+function getChartTrendLines(result) {
+  if (!result) {
+    return { trendMain: [], trendCross: [] };
+  }
+
+  if (form.trendDirection !== "up") {
+    return {
+      trendMain: result.trendMain,
+      trendCross: result.trendCross,
+    };
+  }
+
+  return {
+    trendMain: getHigherTrendPoints(result.mainLine, result.clickedValue),
+    trendCross: getHigherTrendPoints(result.crossLinePoints, result.clickedValue),
+  };
+}
+
+/**
+ * 提取矩阵线上大于点击值的点，作为上升趋势在 K 线图中的剩余推演点位。
+ */
+function getHigherTrendPoints(points, clickedValue) {
+  return (points || []).filter(point => Number(point.value ?? point) > Number(clickedValue));
+}
 
 /**
  * 生成新的 Gann 矩阵，并重置当前选中态与搜索结果。
