@@ -12,29 +12,6 @@
     </div>
 
     <div class="toolbar-grid">
-      <label class="field-card">
-        <span class="field-label">市场</span>
-        <el-select v-model="marketModel" placeholder="选择市场" size="large">
-          <el-option
-            v-for="option in marketOptions"
-            :key="option.value"
-            :label="option.label"
-            :value="option.value"
-          />
-        </el-select>
-      </label>
-
-      <label class="field-card symbol-card">
-        <span class="field-label">股票代码</span>
-        <el-input
-          v-model.trim="stockSymbolDraft"
-          placeholder="AAPL / 600519 / 00700"
-          clearable
-          size="large"
-          @blur="commitStockSymbol"
-        />
-      </label>
-
       <div class="field-card price-action-card">
         <span class="field-label">价格点位</span>
         <div class="price-action-row">
@@ -49,23 +26,85 @@
       </div>
     </div>
 
-    <KLineChartView
-      class="chart-shell"
-      :symbol="marketForm.symbol || 'STOCK'"
-      :market="marketModel"
-      :levels="rankedChartLevels"
-      :height="marketForm.chartHeight"
-      :period="activePeriod"
-      :chart-settings="chartSettings"
-      :price-indicators="priceIndicators"
-      :sub-indicators="subIndicators"
-      @candle-select="handleCandleSelect"
-    />
+    <div
+      class="chart-workspace"
+      :style="{
+        '--watchlist-width': `${watchlistWidth}px`,
+        '--chart-workspace-height': `${marketForm.chartHeight + 56}px`,
+      }"
+    >
+      <aside class="watchlist-panel">
+        <div class="watchlist-search">
+          <el-input
+            v-model.trim="stockSearch"
+            placeholder="搜索中文名 / 代码"
+            clearable
+            size="large"
+          />
+        </div>
+
+        <div class="watchlist-tabs">
+          <button
+            v-for="group in stockGroups"
+            :key="group.key"
+            class="watchlist-tab"
+            :class="{ active: activeStockGroup === group.key }"
+            type="button"
+            @click="activeStockGroup = group.key"
+          >
+            <span>{{ group.label }}</span>
+            <em>{{ stockGroupCounts[group.key] || 0 }}</em>
+          </button>
+        </div>
+
+        <div class="watchlist-body">
+          <button
+            v-for="stock in activeStockList"
+            :key="`${stock.market}:${stock.symbol}`"
+            class="stock-row"
+            :class="{ active: isActiveStock(stock) }"
+            type="button"
+            @click="selectStock(stock)"
+          >
+            <span class="stock-info">
+              <strong>{{ stock.displayName || stock.name || stock.symbol }}</strong>
+              <small>{{ stock.symbol }}</small>
+            </span>
+            <span class="stock-price">{{ stock.latestPrice || "--" }}</span>
+          </button>
+
+          <div v-if="!activeStockList.length" class="stock-empty">
+            {{ stocksLoading ? "加载中..." : "暂无自选股" }}
+          </div>
+        </div>
+
+        <button
+          class="watchlist-resizer"
+          type="button"
+          title="拖动调整自选股宽度"
+          @pointerdown="startResizeWatchlist"
+        ></button>
+      </aside>
+
+      <KLineChartView
+        class="chart-shell"
+        :symbol="marketForm.symbol || 'STOCK'"
+        :market="marketModel"
+        :levels="rankedChartLevels"
+        :height="marketForm.chartHeight"
+        :period="activePeriod"
+        :chart-settings="chartSettings"
+        :price-indicators="priceIndicators"
+        :sub-indicators="subIndicators"
+        :display-name="selectedStockDisplayName"
+        @candle-select="handleCandleSelect"
+      />
+    </div>
   </section>
 </template>
 
 <script setup>
-import { computed, reactive, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
 import KLineChartView from "./KLineChartView.vue";
 
 const props = defineProps({
@@ -102,10 +141,16 @@ const marketOptions = [
   { label: "A股", value: "cn" },
   { label: "港股", value: "hk" },
 ];
+const stockGroups = marketOptions.map(item => ({
+  label: item.label,
+  key: item.value,
+}));
 const trendDirectionOptions = [
   { label: "上升", value: "up" },
   { label: "下降", value: "down" },
 ];
+const MARKET_API_BASE = (import.meta.env.VITE_MARKET_API_BASE || "").replace(/\/$/, "");
+const STOCK_LIST_PATH = import.meta.env.VITE_STOCK_LIST_PATH || "/api/stocks";
 const periodKey = ref("day");
 const priceIndicators = ref(["MA"]);
 const subIndicators = ref(["VOL", "MACD"]);
@@ -120,25 +165,187 @@ const chartSettings = reactive({
   scrollEnabled: true,
 });
 
-const stockSymbolDraft = ref(stockSymbolModel.value);
+const activeStockGroup = ref("us");
+const stocksLoading = ref(false);
+const stockSearch = ref("");
+const selectedStockDisplayName = ref("");
+const watchlistWidth = ref(340);
+const resizeState = reactive({
+  active: false,
+  startX: 0,
+  startWidth: 340,
+});
+const stockLists = reactive({
+  us: [],
+  cn: [],
+  hk: [],
+  usOptions: [],
+  other: [],
+});
+const stockGroupCounts = reactive({
+  us: 0,
+  cn: 0,
+  hk: 0,
+  usOptions: 0,
+  other: 0,
+});
 const activePeriod = computed(() => parsePeriod(periodKey.value));
+const activeStockList = computed(() => {
+  const rows = stockLists[activeStockGroup.value] || [];
+  const keyword = stockSearch.value.trim().toLowerCase();
+  if (!keyword) return rows;
+
+  return rows.filter(stock => {
+    const text = [
+      stock.symbol,
+      stock.name,
+      stock.displayName,
+    ].join(" ").toLowerCase();
+    return text.includes(keyword);
+  });
+});
 const rankedChartLevels = computed(() => (
   rankProjectedLevels(props.chartLevels, props.marketForm.anchorPrice)
 ));
 
-watch(stockSymbolModel, value => {
-  if (value !== stockSymbolDraft.value) {
-    stockSymbolDraft.value = value;
-  }
+onMounted(() => {
+  loadWatchlist();
 });
 
-function commitStockSymbol() {
-  const nextSymbol = String(stockSymbolDraft.value || "").trim().toUpperCase();
-  stockSymbolDraft.value = nextSymbol;
+onBeforeUnmount(() => {
+  stopResizeWatchlist();
+});
 
-  if (nextSymbol !== stockSymbolModel.value) {
-    stockSymbolModel.value = nextSymbol;
+async function loadWatchlist() {
+  stocksLoading.value = true;
+
+  try {
+    const origin = globalThis.location?.origin || "http://localhost";
+    const url = new URL(`${MARKET_API_BASE}${STOCK_LIST_PATH}`, origin);
+    const response = await fetch(url.toString());
+    if (!response.ok) return;
+
+    const json = await response.json();
+    applyStockPayload(json?.data ?? json);
+  } catch (error) {
+    console.warn("自选股列表获取失败。", error);
+  } finally {
+    stocksLoading.value = false;
   }
+}
+
+function applyStockPayload(payload) {
+  const categories = payload?.categories && typeof payload.categories === "object"
+    ? payload.categories
+    : payload;
+  const counts = payload?.counts && typeof payload.counts === "object"
+    ? payload.counts
+    : payload;
+
+  stockGroups.forEach(group => {
+    const source = categories?.[group.key] ?? categories?.[toBackendStockGroupKey(group.key)];
+    const rows = normalizeStockRows(source, group.key);
+
+    stockLists[group.key] = rows;
+    stockGroupCounts[group.key] = rows.length || Number(counts?.[group.key]) || 0;
+  });
+
+  if (Array.isArray(payload?.stocks)) {
+    payload.stocks.forEach(item => {
+      const stock = normalizeStockItem(item);
+      if (!stock.symbol || !stockLists[stock.market]) return;
+
+      stockLists[stock.market].push(stock);
+      stockGroupCounts[stock.market] = stockLists[stock.market].length;
+    });
+  } else if (payload?.stocks && typeof payload.stocks === "object") {
+    applyStockPayload(payload.stocks);
+  }
+}
+
+function normalizeStockRows(source, market) {
+  if (!Array.isArray(source)) return [];
+  return source
+    .map(item => normalizeStockItem(item, market))
+    .filter(item => isVisibleStock(item, market))
+    .filter(item => item.symbol);
+}
+
+function normalizeStockItem(item, fallbackMarket = "us") {
+  if (typeof item === "string") {
+    return {
+      symbol: item.toUpperCase(),
+      name: "",
+      market: fallbackMarket,
+    };
+  }
+
+  const rawMarket = item.market ?? item.type ?? item.category ?? fallbackMarket;
+  return {
+    symbol: String(item.symbol ?? item.code ?? item.ticker ?? item.name ?? "").trim().toUpperCase(),
+    name: item.name ?? item.title ?? item.label ?? "",
+    displayName: item.nameCn || item.nameHk || item.nameEn || item.name || item.title || item.label || "",
+    market: normalizeStockMarket(rawMarket),
+    board: item.board || "",
+    exchange: item.exchange || "",
+    latestPrice: item.lastPrice ?? item.latestPrice ?? item.price ?? item.watchedPrice ?? "",
+    changePercent: item.changePercent ?? item.changeRate ?? item.pctChange ?? item.chgPct ?? item.percent ?? null,
+  };
+}
+
+function isVisibleStock(stock, groupMarket) {
+  if (!["us", "cn", "hk"].includes(groupMarket)) return false;
+  if (groupMarket !== "us") return true;
+
+  return !String(stock.board || "").toLowerCase().includes("option");
+}
+
+function normalizeStockMarket(value) {
+  const raw = String(value || "").trim();
+  const lower = raw.toLowerCase();
+  if (["cn", "a", "ashare", "a股"].includes(lower)) return "cn";
+  if (["hk", "港股"].includes(lower)) return "hk";
+  if (["usoptions", "option", "options", "期权"].includes(lower)) return "usOptions";
+  if (["other", "其他"].includes(lower)) return "other";
+  return "us";
+}
+
+function toBackendStockGroupKey(value) {
+  if (value === "usOptions") return "options";
+  return value;
+}
+
+function selectStock(stock) {
+  props.marketForm.anchorPrice = null;
+  marketModel.value = stock.market;
+  stockSymbolModel.value = stock.symbol;
+  selectedStockDisplayName.value = stock.displayName || stock.name || stock.symbol;
+}
+
+function isActiveStock(stock) {
+  return stock.market === marketModel.value && stock.symbol === String(stockSymbolModel.value || "").toUpperCase();
+}
+
+function startResizeWatchlist(event) {
+  resizeState.active = true;
+  resizeState.startX = event.clientX;
+  resizeState.startWidth = watchlistWidth.value;
+  event.currentTarget?.setPointerCapture?.(event.pointerId);
+  window.addEventListener("pointermove", resizeWatchlist);
+  window.addEventListener("pointerup", stopResizeWatchlist);
+}
+
+function resizeWatchlist(event) {
+  if (!resizeState.active) return;
+
+  const nextWidth = resizeState.startWidth + event.clientX - resizeState.startX;
+  watchlistWidth.value = Math.min(600, Math.max(260, nextWidth));
+}
+
+function stopResizeWatchlist() {
+  resizeState.active = false;
+  window.removeEventListener("pointermove", resizeWatchlist);
+  window.removeEventListener("pointerup", stopResizeWatchlist);
 }
 
 function projectFromInput() {
@@ -177,8 +384,10 @@ function parsePeriod(value) {
 }
 
 function rankProjectedLevels(levels, anchorPrice) {
+  if (anchorPrice === null || anchorPrice === undefined || anchorPrice === "") return [];
+
   const anchor = Number(anchorPrice);
-  if (!Number.isFinite(anchor)) return [];
+  if (!Number.isFinite(anchor) || anchor <= 0) return [];
 
   const deduped = dedupeLevels(levels)
     .map(level => ({
@@ -273,6 +482,7 @@ h2 {
 
 .anchor-card,
 .field-card,
+.watchlist-panel,
 .chart-shell {
   border: 1px solid rgba(34, 44, 74, 0.08);
   border-radius: 14px;
@@ -299,7 +509,7 @@ h2 {
 
 .toolbar-grid {
   display: grid;
-  grid-template-columns: 0.78fr 1.12fr 1.35fr 0.88fr;
+  grid-template-columns: minmax(260px, 1.2fr) minmax(220px, 0.8fr);
   gap: 10px;
 }
 
@@ -329,6 +539,190 @@ h2 {
   width: 100%;
 }
 
+.chart-workspace {
+  display: grid;
+  grid-template-columns: var(--watchlist-width, 340px) minmax(0, 1fr);
+  gap: 10px;
+  height: var(--chart-workspace-height);
+  align-items: stretch;
+}
+
+.watchlist-panel {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  min-height: 0;
+  height: 100%;
+  overflow: visible;
+}
+
+.watchlist-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  padding: 8px;
+  border-bottom: 1px solid rgba(34, 44, 74, 0.08);
+  overflow: hidden;
+}
+
+.watchlist-search {
+  padding: 8px;
+  border-bottom: 1px solid rgba(34, 44, 74, 0.08);
+}
+
+.watchlist-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 5px;
+  min-height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #475467;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.watchlist-resizer {
+  position: absolute;
+  top: 0;
+  right: -7px;
+  z-index: 2;
+  width: 12px;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  cursor: col-resize;
+}
+
+.watchlist-resizer::after {
+  position: absolute;
+  top: 50%;
+  left: 5px;
+  width: 2px;
+  height: 46px;
+  border-radius: 999px;
+  background: rgba(22, 119, 255, 0.24);
+  content: "";
+  transform: translateY(-50%);
+}
+
+.watchlist-resizer:hover::after {
+  background: rgba(22, 119, 255, 0.55);
+}
+
+.watchlist-tab em {
+  color: #98a2b3;
+  font-style: normal;
+  font-size: 11px;
+}
+
+.watchlist-tab:hover,
+.watchlist-tab.active {
+  color: #1677ff;
+  background: rgba(22, 119, 255, 0.12);
+}
+
+.watchlist-tab.active em {
+  color: #1677ff;
+}
+
+.watchlist-body {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  min-height: 0;
+  padding: 8px;
+  overflow-y: auto;
+  scrollbar-color: rgba(102, 112, 133, 0.32) transparent;
+  scrollbar-width: thin;
+}
+
+.watchlist-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.watchlist-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.watchlist-body::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(102, 112, 133, 0.28);
+}
+
+.watchlist-body::-webkit-scrollbar-thumb:hover {
+  background: rgba(102, 112, 133, 0.42);
+}
+
+.stock-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(68px, auto);
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #1d2939;
+  text-align: left;
+  cursor: pointer;
+}
+
+.stock-row:nth-child(even) {
+  background: rgba(20, 34, 60, 0.035);
+}
+
+.stock-info {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.stock-info strong {
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stock-info small {
+  overflow: hidden;
+  color: #667085;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stock-price {
+  justify-self: end;
+  color: #344054;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.stock-row:hover,
+.stock-row.active {
+  background: rgba(22, 119, 255, 0.12);
+}
+
+.stock-row.active strong {
+  color: #1677ff;
+}
+
+.stock-empty {
+  padding: 18px 8px;
+  color: #98a2b3;
+  font-size: 13px;
+  text-align: center;
+}
+
 .chart-shell {
   padding: 8px;
   overflow: hidden;
@@ -339,6 +733,9 @@ h2 {
     grid-template-columns: 1fr 1fr;
   }
 
+  .chart-workspace {
+    grid-template-columns: minmax(260px, var(--watchlist-width, 340px)) minmax(0, 1fr);
+  }
 }
 
 @media (max-width: 640px) {
@@ -363,6 +760,32 @@ h2 {
 
   .price-action-row {
     grid-template-columns: 1fr;
+  }
+
+  .chart-workspace {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+
+  .watchlist-panel {
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .watchlist-tabs {
+    grid-template-columns: repeat(3, minmax(62px, 1fr));
+    overflow-x: auto;
+  }
+
+  .watchlist-resizer {
+    display: none;
+  }
+
+  .watchlist-body {
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(116px, 1fr);
+    overflow-x: auto;
+    overflow-y: hidden;
   }
 }
 </style>

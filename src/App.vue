@@ -167,6 +167,9 @@ const highlightLabel = computed(() => (
 const projectedLevels = computed(() => {
   if (!lastTrendResult.value || !selectedCell.value) return [];
 
+  const anchorPrice = Number(marketForm.anchorPrice);
+  if (!Number.isFinite(anchorPrice) || anchorPrice <= 0) return [];
+
   const levels = buildBacktestLevels({
     clickedValue: lastTrendResult.value.clickedValue,
     trendMain: lastTrendResult.value.trendMain,

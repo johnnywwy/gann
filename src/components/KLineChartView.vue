@@ -14,7 +14,7 @@
           <path v-else d="M16 9l-3 3 3 3" />
         </svg>
       </button>
-      <div class="symbol-title">{{ symbolInfo.name }}</div>
+      <div class="symbol-title">{{ chartTitle }}</div>
       <button
         v-for="item in periodOptions"
         :key="item.value"
@@ -200,6 +200,10 @@ const props = defineProps({
     type: String,
     default: "us",
   },
+  displayName: {
+    type: String,
+    default: "",
+  },
   levels: {
     type: Array,
     default: () => [],
@@ -243,6 +247,7 @@ const MARKET_KLINE_COUNT = Number(import.meta.env.VITE_MARKET_KLINE_COUNT) || 10
 const YAHOO_PROXY_PREFIX = (import.meta.env.VITE_YAHOO_PROXY_PREFIX || "/api/yahoo").replace(/\/$/, "");
 
 const symbolInfo = computed(() => createSymbolInfo(props.symbol, props.market));
+const chartTitle = computed(() => props.displayName || symbolInfo.value.name);
 const periodKey = ref(periodToKey(props.period));
 const activePriceIndicators = ref([...props.priceIndicators]);
 const activeSubIndicators = ref([...props.subIndicators]);
