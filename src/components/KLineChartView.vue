@@ -774,8 +774,9 @@ async function fetchCustomCloudData(symbol, period, from, to) {
     origin
   );
   url.searchParams.set("count", String(MARKET_KLINE_COUNT));
+  url.searchParams.set("refresh", "1");
 
-  const response = await fetch(url.toString());
+  const response = await fetch(url.toString(), { cache: "no-store" });
   if (!response.ok) return [];
 
   const json = await response.json();
