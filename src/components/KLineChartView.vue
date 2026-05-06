@@ -16,7 +16,7 @@
       </button>
       <div class="symbol-title">{{ chartTitle }}</div>
       <button
-        v-for="item in periodOptions"
+        v-for="item in availablePeriodOptions"
         :key="item.value"
         class="toolbar-button period-button"
         :class="{ active: periodKey === item.value }"
@@ -49,6 +49,29 @@
               :value="item"
             />
           </el-checkbox-group>
+        </div>
+      </el-popover>
+
+      <el-popover placement="bottom-start" trigger="click" width="420">
+        <template #reference>
+          <button class="toolbar-button tool-entry range-entry" type="button">{{ selectedRangeLabel }}</button>
+        </template>
+        <div class="range-panel">
+          <div class="panel-title">K 线时间范围</div>
+          <el-date-picker
+            v-model="rangePickerValue"
+            type="datetimerange"
+            start-placeholder="开始时间"
+            end-placeholder="结束时间"
+            value-format="x"
+            unlink-panels
+            @change="reloadChartData"
+          />
+          <div class="range-actions">
+            <button class="range-action" type="button" @click="setQuickRange(365)">近 1 年</button>
+            <button class="range-action" type="button" @click="setQuickRange(365 * 3)">近 3 年</button>
+            <button class="range-action" type="button" @click="clearTimeRange">实时</button>
+          </div>
         </div>
       </el-popover>
 
@@ -196,7 +219,7 @@
 </template>
 
 <script setup>
-import { ActionType, dispose, init, LineType } from "klinecharts";
+import { ActionType, dispose, init, LineType, LoadDataType } from "klinecharts";
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 
 const props = defineProps({
@@ -245,6 +268,8 @@ let overlayRenderTimer = null;
 let overlayRetryCount = 0;
 let requestSerial = 0;
 let indicatorPaneIds = [];
+let loadedTimestampSet = new Set();
+let canLoadMoreHistory = false;
 
 const MARKET_API_BASE = (
   import.meta.env.VITE_MARKET_API_BASE
@@ -253,12 +278,19 @@ const MARKET_API_BASE = (
 ).replace(/\/$/, "");
 const MARKET_KLINE_COUNT = Number(import.meta.env.VITE_MARKET_KLINE_COUNT) || 1000;
 const YAHOO_PROXY_PREFIX = (import.meta.env.VITE_YAHOO_PROXY_PREFIX || "/api/yahoo").replace(/\/$/, "");
+const KLINE_PAGE_SIZE = Math.min(Math.max(MARKET_KLINE_COUNT, 1), 1000);
 
 const symbolInfo = computed(() => createSymbolInfo(props.symbol, props.market));
 const chartTitle = computed(() => props.displayName || symbolInfo.value.name);
+const selectedRangeLabel = computed(() => {
+  const [from, to] = rangePickerValue.value || [];
+  if (!from || !to) return "实时区间";
+  return `${formatRangeDate(from)} - ${formatRangeDate(to)}`;
+});
 const periodKey = ref(periodToKey(props.period));
 const activePriceIndicators = ref([...props.priceIndicators]);
 const activeSubIndicators = ref([...props.subIndicators]);
+const rangePickerValue = ref([]);
 const drawingCollapsed = ref(false);
 const activeDrawingTool = ref("");
 const overlayMode = ref("normal");
@@ -278,6 +310,19 @@ const activeChartSettings = reactive({
 const activePeriod = computed(() => parsePeriod(periodKey.value));
 
 const periodOptions = [
+  { label: "1分", value: "1m" },
+  { label: "3分", value: "3m" },
+  { label: "5分", value: "5m" },
+  { label: "15分", value: "15m" },
+  { label: "1小时", value: "1h" },
+  { label: "3小时", value: "3h" },
+  { label: "4小时", value: "4h" },
+  { label: "日", value: "day" },
+  { label: "月", value: "month" },
+  { label: "季", value: "quarter" },
+  { label: "年", value: "year" },
+];
+const availablePeriodOptions = [
   { label: "1分", value: "1m" },
   { label: "3分", value: "3m" },
   { label: "5分", value: "5m" },
@@ -461,12 +506,14 @@ function initChart() {
   chartApi.subscribeAction(ActionType.OnVisibleRangeChange, scheduleLevelOverlayRender);
   chartApi.subscribeAction(ActionType.OnScroll, scheduleLevelOverlayRender);
   chartApi.subscribeAction(ActionType.OnZoom, scheduleLevelOverlayRender);
+  chartApi.setLoadDataCallback?.(handleLoadData);
   applyChartSettings();
   reloadChartData();
 }
 
 function destroyChart() {
   if (chartApi) {
+    chartApi.setLoadDataCallback?.(null);
     chartApi.unsubscribeAction(ActionType.OnCandleBarClick, handleCandleClick);
     chartApi.unsubscribeAction(ActionType.OnDataReady, scheduleLevelOverlayRender);
     chartApi.unsubscribeAction(ActionType.OnVisibleRangeChange, scheduleLevelOverlayRender);
@@ -490,20 +537,35 @@ async function reloadChartData() {
   if (!chartApi) return;
 
   const currentRequest = ++requestSerial;
+  canLoadMoreHistory = false;
   isChartLoading.value = true;
+  chartApi.setLoadDataCallback?.(null);
   chartApi.removeOverlay({ groupId: "gann-levels" });
   chartApi.clearData?.();
 
   try {
-    const range = getInitialRange(activePeriod.value);
-    const data = await fetchCloudKLineData(symbolInfo.value, activePeriod.value, range.from, range.to);
+    const range = getInitialLoadRange(activePeriod.value);
+    const data = await fetchCloudKLineData(
+      symbolInfo.value,
+      activePeriod.value,
+      range.from,
+      range.to,
+      KLINE_PAGE_SIZE
+    );
     if (currentRequest !== requestSerial || !chartApi) return;
 
-    chartApi.applyNewData(data, false);
+    loadedTimestampSet = new Set(data.map(item => item.timestamp));
+    chartApi.applyNewData(data, hasMoreBefore(data[0]?.timestamp, activePeriod.value));
     resetIndicators();
     chartApi.scrollToRealTime?.(0);
     chartApi.resize?.();
     scheduleLevelOverlayRender();
+    window.setTimeout(() => {
+      if (currentRequest === requestSerial) {
+        canLoadMoreHistory = true;
+        chartApi?.setLoadDataCallback?.(handleLoadData);
+      }
+    }, 300);
   } catch (error) {
     if (currentRequest === requestSerial) {
       console.error("K 线数据加载失败:", error);
@@ -512,6 +574,54 @@ async function reloadChartData() {
     if (currentRequest === requestSerial) {
       isChartLoading.value = false;
     }
+  }
+}
+
+async function handleLoadData(params) {
+  if (!chartApi || !params?.callback) return;
+
+  if (!canLoadMoreHistory) {
+    params.callback([], false);
+    return;
+  }
+
+  const edgeTimestamp = Number(params.data?.timestamp);
+  if (!Number.isFinite(edgeTimestamp)) {
+    params.callback([], false);
+    return;
+  }
+
+  const pageRange = getPageQueryRange(activePeriod.value, params.type, edgeTimestamp);
+  if (!pageRange) {
+    params.callback([], false);
+    return;
+  }
+
+  isChartLoading.value = true;
+  try {
+    const rows = await fetchCloudKLineData(
+      symbolInfo.value,
+      activePeriod.value,
+      pageRange.from,
+      pageRange.to,
+      KLINE_PAGE_SIZE
+    );
+    const uniqueRows = rows.filter(item => !loadedTimestampSet.has(item.timestamp));
+    uniqueRows.forEach(item => loadedTimestampSet.add(item.timestamp));
+
+    const more = uniqueRows.length > 0 && (
+      params.type === LoadDataType.Forward
+        ? hasMoreBefore(uniqueRows[0]?.timestamp, activePeriod.value)
+        : hasMoreAfter(uniqueRows.at(-1)?.timestamp, activePeriod.value)
+    );
+
+    params.callback(uniqueRows, more);
+    scheduleLevelOverlayRender();
+  } catch (error) {
+    console.warn("分页 K 线加载失败:", error);
+    params.callback([], false);
+  } finally {
+    isChartLoading.value = false;
   }
 }
 
@@ -751,9 +861,9 @@ function createSymbolInfo(symbol, market) {
   };
 }
 
-async function fetchCloudKLineData(symbol, period, from, to) {
+async function fetchCloudKLineData(symbol, period, from, to, count = KLINE_PAGE_SIZE) {
   try {
-    const customData = await fetchCustomCloudData(symbol, period, from, to);
+    const customData = await fetchCustomCloudData(symbol, period, from, to, count);
     if (customData.length) return customData;
   } catch (error) {
     console.warn("自定义行情源请求失败，尝试 Yahoo Finance。", error);
@@ -767,20 +877,22 @@ async function fetchCloudKLineData(symbol, period, from, to) {
   }
 }
 
-async function fetchCustomCloudData(symbol, period, from, to) {
+async function fetchCustomCloudData(symbol, period, from, to, count = KLINE_PAGE_SIZE) {
   const origin = globalThis.location?.origin || "http://localhost";
   const url = new URL(
     `${MARKET_API_BASE}/api/kline/${getMarketPeriodPath(period)}/${encodeURIComponent(toMarketDataSymbol(symbol))}`,
     origin
   );
-  url.searchParams.set("count", String(MARKET_KLINE_COUNT));
+  url.searchParams.set("count", String(count));
   url.searchParams.set("refresh", "1");
+  url.searchParams.set("from", String(Math.floor(normalizeRangeTime(from))));
+  url.searchParams.set("to", String(Math.floor(normalizeRangeTime(to))));
 
   const response = await fetch(url.toString(), { cache: "no-store" });
   if (!response.ok) return [];
 
   const json = await response.json();
-  return normalizeCloudRows(getCloudKLineRows(json));
+  return filterRowsByRange(normalizeCloudRows(getCloudKLineRows(json)), from, to);
 }
 
 async function fetchYahooKLineData(symbol, period, from, to) {
@@ -879,6 +991,103 @@ function getInitialRange(period) {
   const isQuarter = period?.timespan === "quarter";
   const from = to - 86400 * 1000 * (isMinute ? 60 : isHour ? 365 : isYear || isQuarter ? 365 * 12 : 365 * 5);
   return { from, to };
+}
+
+function getActiveQueryRange(period) {
+  return getManualQueryRange() || getInitialRange(period);
+}
+
+function getInitialLoadRange(period) {
+  const activeRange = getManualQueryRange() || { from: 0, to: Date.now() };
+  const pageSpan = getPageSpanMs(period);
+  const to = activeRange.to;
+  const from = Math.max(activeRange.from, to - pageSpan);
+  return { from, to };
+}
+
+function getManualQueryRange() {
+  const [from, to] = rangePickerValue.value || [];
+  const normalizedFrom = normalizeRangeTime(from);
+  const normalizedTo = normalizeRangeTime(to);
+
+  if (normalizedFrom && normalizedTo && normalizedTo > normalizedFrom) {
+    return { from: normalizedFrom, to: normalizedTo };
+  }
+
+  return null;
+}
+
+function getPageQueryRange(period, type, edgeTimestamp) {
+  const activeRange = getManualQueryRange() || { from: 0, to: Date.now() };
+  const pageSpan = getPageSpanMs(period);
+  const periodMs = getPeriodDurationMs(period);
+
+  if (type === LoadDataType.Forward) {
+    const to = Math.min(edgeTimestamp - periodMs, activeRange.to);
+    const from = Math.max(activeRange.from, to - pageSpan);
+    return to > activeRange.from ? { from, to } : null;
+  }
+
+  if (type === LoadDataType.Backward) {
+    const from = Math.max(edgeTimestamp + periodMs, activeRange.from);
+    const to = Math.min(activeRange.to, from + pageSpan);
+    return from < activeRange.to ? { from, to } : null;
+  }
+
+  return null;
+}
+
+function getPageSpanMs(period) {
+  return getPeriodDurationMs(period) * KLINE_PAGE_SIZE * 1.35;
+}
+
+function getPeriodDurationMs(period) {
+  const multiplier = Number(period?.multiplier) || 1;
+  if (period?.timespan === "minute") return multiplier * 60 * 1000;
+  if (period?.timespan === "hour") return multiplier * 60 * 60 * 1000;
+  if (period?.timespan === "week") return 7 * 86400 * 1000;
+  if (period?.timespan === "month") return 31 * 86400 * 1000;
+  if (period?.timespan === "quarter") return 92 * 86400 * 1000;
+  if (period?.timespan === "year") return 366 * 86400 * 1000;
+  return 86400 * 1000;
+}
+
+function hasMoreBefore(timestamp, period) {
+  const first = normalizeRangeTime(timestamp);
+  if (!first) return false;
+  const activeRange = getManualQueryRange() || { from: 0 };
+  return first - getPeriodDurationMs(period) > activeRange.from;
+}
+
+function hasMoreAfter(timestamp, period) {
+  const last = normalizeRangeTime(timestamp);
+  if (!last) return false;
+  const activeRange = getManualQueryRange() || { to: Date.now() };
+  return last + getPeriodDurationMs(period) < activeRange.to;
+}
+
+function filterRowsByRange(rows, from, to) {
+  const start = normalizeRangeTime(from);
+  const end = normalizeRangeTime(to);
+  return (rows || []).filter(item => item.timestamp >= start && item.timestamp <= end);
+}
+
+function setQuickRange(days) {
+  const to = Date.now();
+  const from = to - Number(days) * 86400 * 1000;
+  rangePickerValue.value = [String(from), String(to)];
+  reloadChartData();
+}
+
+function clearTimeRange() {
+  rangePickerValue.value = [];
+  reloadChartData();
+}
+
+function formatRangeDate(value) {
+  const timestamp = normalizeRangeTime(value);
+  if (!timestamp) return "";
+  return new Date(timestamp).toISOString().slice(0, 10);
 }
 
 function normalizeRangeTime(value) {
@@ -1326,6 +1535,42 @@ const indicatorParams = {
   display: flex;
   flex-wrap: wrap;
   gap: 10px 16px;
+}
+
+.range-entry {
+  min-width: 92px;
+}
+
+.range-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.range-panel :deep(.el-date-editor) {
+  width: 100%;
+}
+
+.range-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.range-action {
+  height: 30px;
+  padding: 0 11px;
+  border: 1px solid #d9e2f0;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.range-action:hover {
+  border-color: #2f5bff;
+  color: #2f5bff;
 }
 
 .kline-host {
