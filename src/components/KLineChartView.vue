@@ -270,6 +270,8 @@ let requestSerial = 0;
 let indicatorPaneIds = [];
 let loadedTimestampSet = new Set();
 let canLoadMoreHistory = false;
+let chartResizeObserver = null;
+let resizeFrame = 0;
 
 const MARKET_API_BASE = (
   import.meta.env.VITE_MARKET_API_BASE
@@ -318,6 +320,7 @@ const periodOptions = [
   { label: "3小时", value: "3h" },
   { label: "4小时", value: "4h" },
   { label: "日", value: "day" },
+  { label: "周", value: "week" },
   { label: "月", value: "month" },
   { label: "季", value: "quarter" },
   { label: "年", value: "year" },
@@ -331,6 +334,7 @@ const availablePeriodOptions = [
   { label: "3小时", value: "3h" },
   { label: "4小时", value: "4h" },
   { label: "日", value: "day" },
+  { label: "周", value: "week" },
   { label: "月", value: "month" },
   { label: "季", value: "quarter" },
   { label: "年", value: "year" },
@@ -441,12 +445,12 @@ watch(
 watch(
   () => props.height,
   () => {
-    nextTick(() => chartApi?.resize?.());
+    nextTick(scheduleChartResize);
   }
 );
 
 watch(drawingCollapsed, () => {
-  nextTick(() => chartApi?.resize?.());
+  nextTick(scheduleChartResize);
 });
 
 watch(
@@ -507,11 +511,14 @@ function initChart() {
   chartApi.subscribeAction(ActionType.OnScroll, scheduleLevelOverlayRender);
   chartApi.subscribeAction(ActionType.OnZoom, scheduleLevelOverlayRender);
   chartApi.setLoadDataCallback?.(handleLoadData);
+  observeChartResize();
   applyChartSettings();
   reloadChartData();
 }
 
 function destroyChart() {
+  stopObserveChartResize();
+
   if (chartApi) {
     chartApi.setLoadDataCallback?.(null);
     chartApi.unsubscribeAction(ActionType.OnCandleBarClick, handleCandleClick);
@@ -531,6 +538,43 @@ function destroyChart() {
   }
 
   chartApi = null;
+}
+
+function observeChartResize() {
+  stopObserveChartResize();
+
+  window.addEventListener("resize", scheduleChartResize);
+
+  if (typeof ResizeObserver === "undefined" || !chartHost.value) {
+    return;
+  }
+
+  chartResizeObserver = new ResizeObserver(scheduleChartResize);
+  chartResizeObserver.observe(chartHost.value);
+  if (chartHost.value.parentElement) {
+    chartResizeObserver.observe(chartHost.value.parentElement);
+  }
+}
+
+function stopObserveChartResize() {
+  window.removeEventListener("resize", scheduleChartResize);
+  chartResizeObserver?.disconnect?.();
+  chartResizeObserver = null;
+
+  if (resizeFrame) {
+    cancelAnimationFrame(resizeFrame);
+    resizeFrame = 0;
+  }
+}
+
+function scheduleChartResize() {
+  if (resizeFrame) return;
+
+  resizeFrame = requestAnimationFrame(() => {
+    resizeFrame = 0;
+    chartApi?.resize?.();
+    scheduleLevelOverlayRender();
+  });
 }
 
 async function reloadChartData() {

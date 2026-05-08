@@ -198,24 +198,28 @@ function getChartTrendLines(result) {
     return { trendMain: [], trendCross: [] };
   }
 
-  if (form.trendDirection !== "up") {
-    return {
-      trendMain: result.trendMain,
-      trendCross: result.trendCross,
-    };
-  }
+  const trendFilter = form.trendDirection === "up" ? isHigherTrendPoint : isLowerTrendPoint;
 
   return {
-    trendMain: getHigherTrendPoints(result.mainLine, result.clickedValue),
-    trendCross: getHigherTrendPoints(result.crossLinePoints, result.clickedValue),
+    trendMain: filterChartTrendPoints(result.mainLine, result.clickedValue, trendFilter),
+    trendCross: filterChartTrendPoints(result.crossLinePoints, result.clickedValue, trendFilter),
   };
 }
 
 /**
- * 提取矩阵线上大于点击值的点，作为上升趋势在 K 线图中的剩余推演点位。
+ * K 线推演使用完整主线/副线中符合方向的点，避免九方图高亮截取影响价格线展示。
  */
-function getHigherTrendPoints(points, clickedValue) {
-  return (points || []).filter(point => Number(point.value ?? point) > Number(clickedValue));
+function filterChartTrendPoints(points, clickedValue, predicate) {
+  const anchor = Number(clickedValue);
+  return (points || []).filter(point => predicate(Number(point.value ?? point), anchor));
+}
+
+function isHigherTrendPoint(value, anchor) {
+  return Number.isFinite(value) && value > anchor;
+}
+
+function isLowerTrendPoint(value, anchor) {
+  return Number.isFinite(value) && value < anchor;
 }
 
 /**
