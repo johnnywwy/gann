@@ -22,7 +22,13 @@
 
       <div class="field-card action-card">
         <span class="field-label">趋势方向</span>
-        <el-segmented v-model="trendDirectionModel" :options="trendDirectionOptions" size="large" />
+        <div class="trend-action-row">
+          <el-segmented v-model="trendDirectionModel" :options="trendDirectionOptions" size="large" />
+          <label class="cross-trend-switch">
+            <span>副线</span>
+            <el-switch v-model="showCrossTrendLevels" size="large" />
+          </label>
+        </div>
       </div>
     </div>
 
@@ -96,6 +102,7 @@
         :chart-settings="chartSettings"
         :price-indicators="priceIndicators"
         :sub-indicators="subIndicators"
+        :show-cross-trend-levels="showCrossTrendLevels"
         :display-name="selectedStockDisplayName"
         @candle-select="handleCandleSelect"
       />
@@ -154,6 +161,7 @@ const STOCK_LIST_PATH = import.meta.env.VITE_STOCK_LIST_PATH || "/api/stocks";
 const periodKey = ref("day");
 const priceIndicators = ref(["MA"]);
 const subIndicators = ref(["VOL", "MACD"]);
+const showCrossTrendLevels = ref(false);
 const chartSettings = reactive({
   barSpace: 8,
   rightSpace: 86,
@@ -540,6 +548,24 @@ h2 {
   grid-template-columns: minmax(150px, 1fr) auto;
   gap: 8px;
   align-items: center;
+}
+
+.trend-action-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) auto;
+  gap: 18px;
+  align-items: center;
+}
+
+.cross-trend-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 76px;
+  color: #607090;
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
 }
 
 :deep(.el-input-number),

@@ -259,6 +259,10 @@ const props = defineProps({
     type: Array,
     default: () => ["VOL", "MACD"],
   },
+  showCrossTrendLevels: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 const emit = defineEmits(["candle-select"]);
@@ -440,6 +444,14 @@ watch(
     scheduleLevelOverlayRender();
   },
   { deep: true }
+);
+
+watch(
+  () => props.showCrossTrendLevels,
+  () => {
+    overlayRetryCount = 0;
+    scheduleLevelOverlayRender();
+  }
 );
 
 watch(
@@ -779,7 +791,7 @@ function renderLevelOverlays() {
   }
   overlayRetryCount = 0;
 
-  const overlays = props.levels
+  const overlays = getVisibleGannLevels()
     .slice(0, 60)
     .map(level => createPriceLineOverlay(level, anchorPoint))
     .filter(Boolean);
@@ -790,6 +802,12 @@ function renderLevelOverlays() {
 
 const PRICE_LINE_LABEL_POSITION = 0.05; // 你现在想放在左侧 15%
 const PRICE_AXIS_WIDTH = 64; // 右侧价格轴宽度，按你的 UI 可以微调 56~72
+
+function getVisibleGannLevels() {
+  return (props.levels || []).filter(level => (
+    props.showCrossTrendLevels || level.lineType !== "cross"
+  ));
+}
 
 function getRightAnchorPoint(chartList) {
   if (!chartList.length || !chartApi || !chartHost.value) return null;
@@ -851,6 +869,8 @@ function createPriceLineOverlay(level, anchorPoint) {
   const price = Number(level.price);
   if (!Number.isFinite(price)) return null;
 
+  const isCrossLine = level.lineType === "cross";
+
   return {
     name: "priceLine",
     groupId: "gann-levels",
@@ -866,13 +886,13 @@ function createPriceLineOverlay(level, anchorPoint) {
     styles: {
       line: {
         color: "#2563eb",
-        size: level.rank <= 2 ? 2 : 1,
-        style: LineType.Solid,
-        dashedValue: [],
+        size: 2,
+        style: isCrossLine ? LineType.Dashed : LineType.Solid,
+        dashedValue: isCrossLine ? [6, 4] : [],
       },
       text: {
         color: "#ffffff",
-        size: level.rank <= 2 ? 12 : 11,
+        size: isCrossLine ? 11 : (level.rank <= 2 ? 12 : 11),
         weight: 800,
       },
     },
