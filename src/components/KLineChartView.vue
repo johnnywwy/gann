@@ -269,6 +269,7 @@ const emit = defineEmits(["candle-select"]);
 const chartHost = ref(null);
 let chartApi = null;
 let overlayRenderTimer = null;
+let majorTurnRenderTimer = null;
 let overlayRetryCount = 0;
 let requestSerial = 0;
 let indicatorPaneIds = [];
@@ -518,7 +519,7 @@ function initChart() {
   if (!chartApi) return;
 
   chartApi.subscribeAction(ActionType.OnCandleBarClick, handleCandleClick);
-  chartApi.subscribeAction(ActionType.OnDataReady, scheduleLevelOverlayRender);
+  chartApi.subscribeAction(ActionType.OnDataReady, handleChartDataReady);
   chartApi.subscribeAction(ActionType.OnVisibleRangeChange, scheduleLevelOverlayRender);
   chartApi.subscribeAction(ActionType.OnScroll, scheduleLevelOverlayRender);
   chartApi.subscribeAction(ActionType.OnZoom, scheduleLevelOverlayRender);
@@ -534,14 +535,16 @@ function destroyChart() {
   if (chartApi) {
     chartApi.setLoadDataCallback?.(null);
     chartApi.unsubscribeAction(ActionType.OnCandleBarClick, handleCandleClick);
-    chartApi.unsubscribeAction(ActionType.OnDataReady, scheduleLevelOverlayRender);
+    chartApi.unsubscribeAction(ActionType.OnDataReady, handleChartDataReady);
     chartApi.unsubscribeAction(ActionType.OnVisibleRangeChange, scheduleLevelOverlayRender);
     chartApi.unsubscribeAction(ActionType.OnScroll, scheduleLevelOverlayRender);
     chartApi.unsubscribeAction(ActionType.OnZoom, scheduleLevelOverlayRender);
     chartApi.removeOverlay({ groupId: "gann-levels" });
+    chartApi.removeOverlay({ groupId: "major-turns" });
   }
 
   clearTimeout(overlayRenderTimer);
+  clearTimeout(majorTurnRenderTimer);
   overlayRetryCount = 0;
 
   if (chartHost.value) {
@@ -597,6 +600,7 @@ async function reloadChartData() {
   isChartLoading.value = true;
   chartApi.setLoadDataCallback?.(null);
   chartApi.removeOverlay({ groupId: "gann-levels" });
+  chartApi.removeOverlay({ groupId: "major-turns" });
   chartApi.clearData?.();
 
   try {
@@ -616,6 +620,7 @@ async function reloadChartData() {
     chartApi.scrollToRealTime?.(0);
     chartApi.resize?.();
     scheduleLevelOverlayRender();
+    scheduleMajorTurnRender();
     window.setTimeout(() => {
       if (currentRequest === requestSerial) {
         canLoadMoreHistory = true;
@@ -673,6 +678,7 @@ async function handleLoadData(params) {
 
     params.callback(uniqueRows, more);
     scheduleLevelOverlayRender();
+    scheduleMajorTurnRender();
   } catch (error) {
     console.warn("分页 K 线加载失败:", error);
     params.callback([], false);
@@ -770,9 +776,165 @@ function clearManualDrawings() {
   chartApi?.removeOverlay?.({ groupId: "manual-drawings" });
 }
 
+function handleChartDataReady() {
+  scheduleLevelOverlayRender();
+  scheduleMajorTurnRender();
+}
+
 function scheduleLevelOverlayRender() {
   clearTimeout(overlayRenderTimer);
   overlayRenderTimer = setTimeout(renderLevelOverlays, 120);
+}
+
+function scheduleMajorTurnRender() {
+  clearTimeout(majorTurnRenderTimer);
+  majorTurnRenderTimer = setTimeout(renderMajorTurnOverlays, 160);
+}
+
+function renderMajorTurnOverlays() {
+  if (!chartApi) return;
+
+  chartApi.removeOverlay({ groupId: "major-turns" });
+
+  const chartList = chartApi.getDataList?.() || [];
+  const turns = detectMajorTurns(chartList, activePeriod.value);
+  if (!turns.length) return;
+
+  const overlays = turns.map(turn => createMajorTurnOverlay(turn)).filter(Boolean);
+  chartApi.createOverlay(overlays, "candle_pane");
+  console.log("大级别转折:", turns.map(turn => ({
+    date: timestampToDate(turn.timestamp),
+    type: turn.type === "high" ? "顶" : "底",
+    price: turn.price,
+  })));
+}
+
+function detectMajorTurns(candles, period) {
+  if (!Array.isArray(candles) || candles.length < 80) return [];
+  if (period?.timespan === "minute" || period?.timespan === "hour") return [];
+
+  const windowSize = getMajorTurnWindow(period);
+  const minMovePct = getMajorTurnMinMove(period, candles);
+  const candidates = [];
+
+  for (let index = windowSize; index < candles.length - windowSize; index++) {
+    const candle = candles[index];
+    const range = candles.slice(index - windowSize, index + windowSize + 1);
+    const isHigh = range.every(item => candle.high >= item.high);
+    const isLow = range.every(item => candle.low <= item.low);
+
+    if (isHigh) {
+      candidates.push({
+        type: "high",
+        index,
+        timestamp: candle.timestamp,
+        price: candle.high,
+      });
+    }
+
+    if (isLow) {
+      candidates.push({
+        type: "low",
+        index,
+        timestamp: candle.timestamp,
+        price: candle.low,
+      });
+    }
+  }
+
+  return compressMajorTurns(candidates, minMovePct).slice(-18);
+}
+
+function compressMajorTurns(candidates, minMovePct) {
+  const turns = [];
+
+  candidates.forEach(candidate => {
+    const last = turns.at(-1);
+
+    if (!last) {
+      turns.push(candidate);
+      return;
+    }
+
+    if (candidate.type === last.type) {
+      const shouldReplace = candidate.type === "high"
+        ? candidate.price > last.price
+        : candidate.price < last.price;
+      if (shouldReplace) {
+        turns[turns.length - 1] = candidate;
+      }
+      return;
+    }
+
+    const movePct = Math.abs(candidate.price - last.price) / Math.max(last.price, 1);
+    if (movePct >= minMovePct) {
+      turns.push(candidate);
+    }
+  });
+
+  return turns;
+}
+
+function getMajorTurnWindow(period) {
+  if (period?.timespan === "week") return 5;
+  if (period?.timespan === "month" || period?.timespan === "quarter" || period?.timespan === "year") return 3;
+  return 10;
+}
+
+function getMajorTurnMinMove(period, candles) {
+  if (period?.timespan === "week") return 0.12;
+  if (period?.timespan === "month" || period?.timespan === "quarter" || period?.timespan === "year") return 0.18;
+
+  const recent = candles.slice(-160);
+  const averageRangePct = recent.reduce((total, candle) => {
+    const close = Number(candle.close) || 1;
+    return total + ((Number(candle.high) - Number(candle.low)) / close);
+  }, 0) / Math.max(recent.length, 1);
+
+  return Math.max(0.08, Math.min(0.18, averageRangePct * 4));
+}
+
+function createMajorTurnOverlay(turn) {
+  const isHigh = turn.type === "high";
+  const label = `${isHigh ? "顶" : "底"} ${Math.round(turn.price)}`;
+  const tagColor = isHigh ? "#d94141" : "#12875a";
+
+  return {
+    name: "simpleAnnotation",
+    groupId: "major-turns",
+    lock: true,
+    visible: true,
+    extendData: label,
+    points: [{
+      dataIndex: turn.index,
+      timestamp: turn.timestamp,
+      value: turn.price,
+    }],
+    styles: {
+      line: {
+        color: tagColor,
+        size: 1,
+        style: LineType.Dashed,
+        dashedValue: [4, 2],
+      },
+      polygon: {
+        color: tagColor,
+      },
+      text: {
+        color: "#ffffff",
+        backgroundColor: tagColor,
+        borderColor: tagColor,
+        borderSize: 1,
+        borderRadius: 3,
+        paddingLeft: 5,
+        paddingRight: 5,
+        paddingTop: 3,
+        paddingBottom: 3,
+        size: 12,
+        weight: 800,
+      },
+    },
+  };
 }
 
 function renderLevelOverlays() {
