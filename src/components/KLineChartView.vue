@@ -207,6 +207,13 @@
       </aside>
       <div class="kline-chart-stage">
         <div ref="chartHost" class="kline-host"></div>
+        <div v-if="hoverCandleInfo" class="candle-hover-card">
+          <span class="date">{{ hoverCandleInfo.date }}</span>
+          <strong class="open">开盘 {{ hoverCandleInfo.open }}</strong>
+          <strong class="close">收盘 {{ hoverCandleInfo.close }}</strong>
+          <strong class="high">最高 {{ hoverCandleInfo.high }}</strong>
+          <strong class="low">最低 {{ hoverCandleInfo.low }}</strong>
+        </div>
         <div class="major-turn-html-layer">
           <button
             v-for="label in majorTurnLabels"
@@ -363,6 +370,7 @@ const activeSubIndicators = ref([...props.subIndicators]);
 const majorTurnList = ref([]);
 const majorTurnLabels = ref([]);
 const selectedTurnStats = ref(null);
+const hoverCandleInfo = ref(null);
 const rangePickerValue = ref([]);
 const drawingCollapsed = ref(false);
 const activeDrawingTool = ref("");
@@ -593,6 +601,8 @@ function initChart() {
   chartApi.subscribeAction(ActionType.OnZoom, handleChartViewportChange);
   chartApi.setLoadDataCallback?.(handleLoadData);
   chartHost.value.addEventListener("click", handleChartHostClick);
+  chartHost.value.addEventListener("mousemove", handleChartMouseMove);
+  chartHost.value.addEventListener("mouseleave", clearHoverCandleInfo);
   observeChartResize();
   applyChartSettings();
   reloadChartData();
@@ -609,6 +619,8 @@ function destroyChart() {
     chartApi.unsubscribeAction(ActionType.OnScroll, handleChartViewportChange);
     chartApi.unsubscribeAction(ActionType.OnZoom, handleChartViewportChange);
     chartHost.value?.removeEventListener("click", handleChartHostClick);
+    chartHost.value?.removeEventListener("mousemove", handleChartMouseMove);
+    chartHost.value?.removeEventListener("mouseleave", clearHoverCandleInfo);
     chartApi.removeOverlay({ groupId: "gann-levels" });
     chartApi.removeOverlay({ groupId: "major-turns" });
   }
@@ -673,6 +685,7 @@ async function reloadChartData() {
   chartApi.removeOverlay({ groupId: "gann-levels" });
   chartApi.removeOverlay({ groupId: "major-turns" });
   selectedTurnStats.value = null;
+  clearHoverCandleInfo();
   majorTurnList.value = [];
   majorTurnLabels.value = [];
   chartApi.clearData?.();
@@ -1486,6 +1499,44 @@ function handleCandleClick(payload) {
   }
 }
 
+function handleChartMouseMove(event) {
+  if (!chartApi || !chartHost.value) {
+    clearHoverCandleInfo();
+    return;
+  }
+
+  const rect = chartHost.value.getBoundingClientRect();
+  const x = event.clientX - rect.left;
+  const y = event.clientY - rect.top;
+  if (x < 0 || x > rect.width || y < 0 || y > rect.height) {
+    clearHoverCandleInfo();
+    return;
+  }
+
+  const pixelPoint = chartApi.convertFromPixel?.({ x, y }, { paneId: "candle_pane" })
+    || chartApi.convertFromPixel?.({ x }, { paneId: "candle_pane" });
+  const dataIndex = Math.round(Number(pixelPoint?.dataIndex));
+  const chartList = chartApi.getDataList?.() || [];
+  const candle = Number.isFinite(dataIndex) ? chartList[dataIndex] : null;
+
+  if (!candle || !isValidKLineData(candle)) {
+    clearHoverCandleInfo();
+    return;
+  }
+
+  hoverCandleInfo.value = {
+    date: timestampToDate(candle.timestamp),
+    open: formatPrice(candle.open),
+    close: formatPrice(candle.close),
+    high: formatPrice(candle.high),
+    low: formatPrice(candle.low),
+  };
+}
+
+function clearHoverCandleInfo() {
+  hoverCandleInfo.value = null;
+}
+
 function handleChartHostClick(event) {
   if (!chartApi || !chartHost.value || !majorTurnList.value.length) return;
 
@@ -2261,6 +2312,68 @@ const indicatorParams = {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+}
+
+.candle-hover-card {
+  position: absolute;
+  top: 10px;
+  right: 65px;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  max-width: min(620px, calc(100% - 120px));
+  padding: 7px;
+  border: 1px solid rgba(34, 44, 74, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.94);
+  color: #344054;
+  font-size: 12px;
+  line-height: 1.2;
+  pointer-events: none;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.1);
+  backdrop-filter: blur(4px);
+}
+
+.candle-hover-card span,
+.candle-hover-card strong {
+  display: inline-flex;
+  align-items: center;
+  min-height: 23px;
+  padding: 0 7px;
+  border-radius: 5px;
+  white-space: nowrap;
+}
+
+.candle-hover-card .date {
+  background: #f2f4f7;
+  color: #667085;
+  font-weight: 800;
+}
+
+.candle-hover-card strong {
+  font-weight: 900;
+}
+
+.candle-hover-card .open {
+  background: #eef4ff;
+  color: #2d5bce;
+}
+
+.candle-hover-card .close {
+  background: #fff1f3;
+  color: #c93636;
+}
+
+.candle-hover-card .high {
+  background: #fef6e7;
+  color: #b85d00;
+}
+
+.candle-hover-card .low {
+  background: #eaf8f1;
+  color: #12875a;
 }
 
 .major-turn-html-layer {
