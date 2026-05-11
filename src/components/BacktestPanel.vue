@@ -105,14 +105,21 @@
         :show-cross-trend-levels="showCrossTrendLevels"
         :display-name="selectedStockDisplayName"
         @candle-select="handleCandleSelect"
+        @major-turn-select="handleMajorTurnSelect"
       />
     </div>
+
+    <StockProjectionStats
+      :stats="selectedProjectionStats"
+      @close="selectedProjectionStats = null"
+    />
   </section>
 </template>
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
 import KLineChartView from "./KLineChartView.vue";
+import StockProjectionStats from "./StockProjectionStats.vue";
 
 const props = defineProps({
   marketForm: {
@@ -177,6 +184,7 @@ const activeStockGroup = ref("us");
 const stocksLoading = ref(false);
 const stockSearch = ref("");
 const selectedStockDisplayName = ref("");
+const selectedProjectionStats = ref(null);
 const watchlistWidth = ref(340);
 const resizeState = reactive({
   active: false,
@@ -333,6 +341,7 @@ function selectStock(stock) {
 
   if (!isSameStock) {
     props.marketForm.anchorPrice = null;
+    selectedProjectionStats.value = null;
   }
 
   marketModel.value = nextMarket;
@@ -370,11 +379,23 @@ function projectFromInput() {
   const price = Number(props.marketForm.anchorPrice);
   if (!Number.isFinite(price) || price <= 0) return;
 
+  selectedProjectionStats.value = null;
   emit("price-project", price);
 }
 
-function handleCandleSelect(point) {
-  emit("price-select", point);
+function handleCandleSelect() {
+  // 普通 K 线点击只用于看图，不改价格点位，也不触发推演。
+}
+
+function handleMajorTurnSelect(payload) {
+  const price = Number(payload?.price);
+  if (!Number.isFinite(price) || price <= 0) return;
+
+  const direction = payload?.turn?.type === "low" || payload?.direction === "up" ? "up" : "down";
+  selectedProjectionStats.value = payload.stats || null;
+  props.marketForm.anchorPrice = price;
+  trendDirectionModel.value = direction;
+  emit("price-project", { price, direction });
 }
 
 function parsePeriod(value) {
@@ -579,8 +600,9 @@ h2 {
   display: grid;
   grid-template-columns: var(--watchlist-width, 340px) minmax(0, 1fr);
   gap: 10px;
-  height: var(--chart-workspace-height);
-  align-items: stretch;
+  min-height: var(--chart-workspace-height);
+  height: auto;
+  align-items: start;
 }
 
 .watchlist-panel {
@@ -588,7 +610,7 @@ h2 {
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
   min-height: 0;
-  height: 100%;
+  height: var(--chart-workspace-height);
   overflow: visible;
 }
 
@@ -761,7 +783,7 @@ h2 {
 
 .chart-shell {
   padding: 8px;
-  overflow: hidden;
+  overflow: visible;
 }
 
 @media (max-width: 1180px) {

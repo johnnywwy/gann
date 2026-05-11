@@ -207,6 +207,21 @@
       </aside>
       <div class="kline-chart-stage">
         <div ref="chartHost" class="kline-host"></div>
+        <div class="major-turn-html-layer">
+          <button
+            v-for="label in majorTurnLabels"
+            :key="`${label.timestamp}-${label.type}`"
+            class="major-turn-label"
+            :class="label.type"
+            :style="{ left: `${label.x}px`, top: `${label.y}px` }"
+            type="button"
+            @pointerdown.stop
+            @mousedown.stop
+            @click.stop="selectMajorTurn(label.turn)"
+          >
+            {{ label.text }}
+          </button>
+        </div>
         <transition name="chart-loading-fade">
           <div v-if="isChartLoading" class="chart-loading-mask">
             <span class="chart-loading-spinner"></span>
@@ -215,12 +230,59 @@
         </transition>
       </div>
     </div>
+
+    <section v-if="false && selectedTurnStats" class="turn-stat-panel">
+      <div class="turn-stat-head">
+        <div>
+          <strong>{{ selectedTurnStats.title }}</strong>
+          <span>{{ selectedTurnStats.subtitle }}</span>
+        </div>
+        <button type="button" class="turn-stat-close" @click="clearSelectedTurnStats">关闭</button>
+      </div>
+
+      <div class="turn-stat-table-wrap">
+        <table class="turn-stat-table">
+          <thead>
+            <tr>
+              <th>江恩位</th>
+              <th>线型</th>
+              <th>接近</th>
+              <th>受压</th>
+              <th>支撑</th>
+              <th>跌破/突破</th>
+              <th>最近信号</th>
+              <th>最近日期</th>
+              <th>后续幅度</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in selectedTurnStats.rows" :key="`${row.price}-${row.lineType}-${row.rank}`">
+              <td class="price-cell">{{ row.price }}</td>
+              <td>{{ row.lineLabel }}</td>
+              <td>{{ row.tests }}</td>
+              <td>{{ row.rejections }}</td>
+              <td>{{ row.supports }}</td>
+              <td>{{ row.breaks }}</td>
+              <td>{{ row.latestSignal }}</td>
+              <td>{{ row.latestDate || "--" }}</td>
+              <td>{{ row.latestMove || "--" }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
   </div>
 </template>
 
 <script setup>
 import { ActionType, dispose, init, LineType, LoadDataType, registerOverlay } from "klinecharts";
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import { buildBacktestLevels } from "../utils/marketBacktest";
+import {
+  calculateClickTrend,
+  findNumberPosition,
+  generateGannMatrix,
+} from "../utils/gannMatrix";
 
 const props = defineProps({
   symbol: {
@@ -265,7 +327,7 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(["candle-select"]);
+const emit = defineEmits(["candle-select", "major-turn-select"]);
 let majorTurnMarkerRegistered = false;
 const chartHost = ref(null);
 let chartApi = null;
@@ -298,6 +360,9 @@ const selectedRangeLabel = computed(() => {
 const periodKey = ref(periodToKey(props.period));
 const activePriceIndicators = ref([...props.priceIndicators]);
 const activeSubIndicators = ref([...props.subIndicators]);
+const majorTurnList = ref([]);
+const majorTurnLabels = ref([]);
+const selectedTurnStats = ref(null);
 const rangePickerValue = ref([]);
 const drawingCollapsed = ref(false);
 const activeDrawingTool = ref("");
@@ -523,10 +588,11 @@ function initChart() {
 
   chartApi.subscribeAction(ActionType.OnCandleBarClick, handleCandleClick);
   chartApi.subscribeAction(ActionType.OnDataReady, handleChartDataReady);
-  chartApi.subscribeAction(ActionType.OnVisibleRangeChange, scheduleLevelOverlayRender);
-  chartApi.subscribeAction(ActionType.OnScroll, scheduleLevelOverlayRender);
-  chartApi.subscribeAction(ActionType.OnZoom, scheduleLevelOverlayRender);
+  chartApi.subscribeAction(ActionType.OnVisibleRangeChange, handleChartViewportChange);
+  chartApi.subscribeAction(ActionType.OnScroll, handleChartViewportChange);
+  chartApi.subscribeAction(ActionType.OnZoom, handleChartViewportChange);
   chartApi.setLoadDataCallback?.(handleLoadData);
+  chartHost.value.addEventListener("click", handleChartHostClick);
   observeChartResize();
   applyChartSettings();
   reloadChartData();
@@ -539,9 +605,10 @@ function destroyChart() {
     chartApi.setLoadDataCallback?.(null);
     chartApi.unsubscribeAction(ActionType.OnCandleBarClick, handleCandleClick);
     chartApi.unsubscribeAction(ActionType.OnDataReady, handleChartDataReady);
-    chartApi.unsubscribeAction(ActionType.OnVisibleRangeChange, scheduleLevelOverlayRender);
-    chartApi.unsubscribeAction(ActionType.OnScroll, scheduleLevelOverlayRender);
-    chartApi.unsubscribeAction(ActionType.OnZoom, scheduleLevelOverlayRender);
+    chartApi.unsubscribeAction(ActionType.OnVisibleRangeChange, handleChartViewportChange);
+    chartApi.unsubscribeAction(ActionType.OnScroll, handleChartViewportChange);
+    chartApi.unsubscribeAction(ActionType.OnZoom, handleChartViewportChange);
+    chartHost.value?.removeEventListener("click", handleChartHostClick);
     chartApi.removeOverlay({ groupId: "gann-levels" });
     chartApi.removeOverlay({ groupId: "major-turns" });
   }
@@ -592,6 +659,7 @@ function scheduleChartResize() {
     resizeFrame = 0;
     chartApi?.resize?.();
     scheduleLevelOverlayRender();
+    scheduleMajorTurnRender();
   });
 }
 
@@ -604,6 +672,9 @@ async function reloadChartData() {
   chartApi.setLoadDataCallback?.(null);
   chartApi.removeOverlay({ groupId: "gann-levels" });
   chartApi.removeOverlay({ groupId: "major-turns" });
+  selectedTurnStats.value = null;
+  majorTurnList.value = [];
+  majorTurnLabels.value = [];
   chartApi.clearData?.();
 
   try {
@@ -784,6 +855,11 @@ function handleChartDataReady() {
   scheduleMajorTurnRender();
 }
 
+function handleChartViewportChange() {
+  scheduleLevelOverlayRender();
+  scheduleMajorTurnRender();
+}
+
 function scheduleLevelOverlayRender() {
   clearTimeout(overlayRenderTimer);
   overlayRenderTimer = setTimeout(renderLevelOverlays, 120);
@@ -801,15 +877,55 @@ function renderMajorTurnOverlays() {
 
   const chartList = chartApi.getDataList?.() || [];
   const turns = detectMajorTurns(chartList, activePeriod.value);
+  majorTurnList.value = turns;
+  updateMajorTurnLabels(turns);
   if (!turns.length) return;
 
-  const overlays = turns.map(turn => createMajorTurnOverlay(turn)).filter(Boolean);
-  chartApi.createOverlay(overlays, "candle_pane");
   console.log("大级别转折:", turns.map(turn => ({
     date: timestampToDate(turn.timestamp),
     type: turn.type === "high" ? "顶" : "底",
     price: turn.price,
   })));
+}
+
+function updateMajorTurnLabels(turns) {
+  if (!chartApi || !chartHost.value || !Array.isArray(turns)) {
+    majorTurnLabels.value = [];
+    return;
+  }
+
+  const hostRect = chartHost.value.getBoundingClientRect();
+  const visibleRange = chartApi.getVisibleRange?.();
+  const visibleFrom = Number.isFinite(visibleRange?.from) ? Math.floor(visibleRange.from) : -Infinity;
+  const visibleTo = Number.isFinite(visibleRange?.to) ? Math.ceil(visibleRange.to) : Infinity;
+
+  majorTurnLabels.value = turns
+    .filter(turn => turn.index >= visibleFrom - 1 && turn.index <= visibleTo + 1)
+    .map(turn => {
+      const point = chartApi.convertToPixel?.({
+        dataIndex: turn.index,
+        timestamp: turn.timestamp,
+        value: turn.price,
+      }, { paneId: "candle_pane" });
+      const x = Number(point?.x);
+      const y = Number(point?.y);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+      if (x < 0 || x > hostRect.width || y < 0 || y > hostRect.height) return null;
+
+      const isHigh = turn.type === "high";
+      const rawLabelY = isHigh ? y - 42 : y + 18;
+      const labelY = Math.max(4, Math.min(hostRect.height - 30, rawLabelY));
+
+      return {
+        turn,
+        type: turn.type,
+        timestamp: turn.timestamp,
+        text: `${isHigh ? "顶" : "底"} ${Math.round(turn.price)}`,
+        x,
+        y: labelY,
+      };
+    })
+    .filter(Boolean);
 }
 
 function detectMajorTurns(candles, period) {
@@ -940,7 +1056,225 @@ function createMajorTurnOverlay(turn) {
         weight: 800,
       },
     },
+    onClick: () => {
+      selectMajorTurn(turn);
+      return true;
+    },
   };
+}
+
+function selectMajorTurn(turn) {
+  const chartList = chartApi?.getDataList?.() || [];
+  const stats = buildMajorTurnStats(turn, chartList);
+  const anchorPrice = Math.round(turn.price);
+  const direction = turn.type === "low" ? "up" : "down";
+  selectedTurnStats.value = stats;
+  emit("major-turn-select", {
+    turn,
+    stats,
+    price: anchorPrice,
+    direction,
+  });
+}
+
+function clearSelectedTurnStats() {
+  selectedTurnStats.value = null;
+}
+
+function buildMajorTurnStats(turn, candles) {
+  const direction = turn.type === "high" ? "down" : "up";
+  const anchorValue = Math.round(turn.price);
+  const levels = buildTurnGannLevels(anchorValue, direction, candles);
+  const afterTurnCandles = candles.slice(turn.index + 1);
+  const rows = levels.slice(0, 12).map(level => analyzeProjectedLevel(level, afterTurnCandles));
+
+  return {
+    title: `${turn.type === "high" ? "顶点" : "底点"} ${anchorValue} 的江恩推演统计`,
+    subtitle: `${timestampToDate(turn.timestamp)} · ${direction === "down" ? "向下推演" : "向上推演"} · 容差 0.5% · 后续 5 根K线判断反应`,
+    rows,
+  };
+}
+
+function buildTurnGannLevels(anchorValue, direction, candles) {
+  const maxPrice = Math.max(anchorValue, ...candles.map(candle => Number(candle.high) || 0));
+  const matrix = generateGannMatrix(1, 1, getGannLoopForPrice(maxPrice));
+  const position = findNumberPosition(matrix, anchorValue);
+  if (position.r === -1) return [];
+
+  const result = calculateClickTrend(matrix, position.r, position.c, direction);
+  const trendFilter = direction === "up"
+    ? value => value > result.clickedValue
+    : value => value < result.clickedValue;
+  const levels = buildBacktestLevels({
+    clickedValue: result.clickedValue,
+    trendMain: (result.mainLine || []).filter(point => trendFilter(Number(point.value))),
+    trendCross: (result.crossLinePoints || []).filter(point => trendFilter(Number(point.value))),
+    matrixStep: 1,
+    anchorPrice: result.clickedValue,
+    priceUnit: 1,
+  });
+
+  return rankProjectedTurnLevels(levels, anchorValue, direction);
+}
+
+function rankProjectedTurnLevels(levels, anchorValue, direction) {
+  const buckets = new Map();
+
+  levels.forEach(level => {
+    const price = Math.round(Number(level.price));
+    if (!Number.isFinite(price) || price <= 0 || price === anchorValue) return;
+    if (direction === "down" && price >= anchorValue) return;
+    if (direction === "up" && price <= anchorValue) return;
+
+    const current = buckets.get(price);
+    const priority = level.lineType === "main" ? 2 : 1;
+    if (!current || priority > current.priority) {
+      buckets.set(price, {
+        ...level,
+        price,
+        priority,
+        distance: Math.abs(price - anchorValue),
+      });
+    }
+  });
+
+  const lineRank = { main: 0, cross: 0 };
+  return [...buckets.values()]
+    .sort((a, b) => a.distance - b.distance)
+    .map(level => {
+      lineRank[level.lineType] += 1;
+      return {
+        ...level,
+        rank: lineRank[level.lineType],
+      };
+    });
+}
+
+function analyzeProjectedLevel(level, candles) {
+  const events = findLevelReactionEvents(candles, Number(level.price));
+  const latest = events.at(-1);
+
+  return {
+    price: Math.round(Number(level.price)),
+    lineType: level.lineType,
+    lineLabel: `${level.lineType === "main" ? "主线" : "副线"} ${level.rank}`,
+    rank: level.rank,
+    tests: events.length,
+    rejections: events.filter(event => event.kind === "resistance").length,
+    supports: events.filter(event => event.kind === "support").length,
+    breaks: events.filter(event => event.kind === "break").length,
+    latestSignal: latest?.label || "--",
+    latestDate: latest?.date || "",
+    latestMove: latest ? formatSignedPercent(latest.movePct) : "",
+  };
+}
+
+function findLevelReactionEvents(candles, price) {
+  const tolerancePct = 0.005;
+  const reactionBars = 5;
+  const reactionPct = 0.03;
+  const breakPct = 0.015;
+  const contacts = [];
+
+  candles.forEach((candle, index) => {
+    const contact = getLevelContact(candle, price, tolerancePct);
+    if (contact) {
+      contacts.push({ candle, index, contact });
+    }
+  });
+
+  const events = [];
+  for (let index = 0; index < contacts.length; index++) {
+    const cluster = [contacts[index]];
+    while (index + 1 < contacts.length && contacts[index + 1].index - contacts[index].index <= 2) {
+      index += 1;
+      cluster.push(contacts[index]);
+    }
+
+    const lastContact = cluster.at(-1);
+    const future = candles.slice(lastContact.index + 1, lastContact.index + 1 + reactionBars);
+    const event = classifyLevelReaction(cluster, future, price, reactionPct, breakPct);
+    if (event) events.push(event);
+  }
+
+  return events;
+}
+
+function getLevelContact(candle, price, tolerancePct) {
+  const lower = price * (1 - tolerancePct);
+  const upper = price * (1 + tolerancePct);
+  const bodyLow = Math.min(Number(candle.open), Number(candle.close));
+  const bodyHigh = Math.max(Number(candle.open), Number(candle.close));
+
+  if (bodyLow <= upper && bodyHigh >= lower) return "实体";
+  if (Number(candle.high) >= lower && Number(candle.high) <= upper) return "上影";
+  if (Number(candle.low) >= lower && Number(candle.low) <= upper) return "下影";
+  if (Number(candle.low) <= upper && Number(candle.high) >= lower) return "穿越";
+  return "";
+}
+
+function classifyLevelReaction(cluster, future, price, reactionPct, breakPct) {
+  if (!future.length) return null;
+
+  const first = cluster[0].candle;
+  const last = cluster.at(-1).candle;
+  const date = first.timestamp === last.timestamp
+    ? timestampToDate(first.timestamp)
+    : `${timestampToDate(first.timestamp)}~${timestampToDate(last.timestamp)}`;
+  const minLow = Math.min(...future.map(candle => Number(candle.low)));
+  const maxHigh = Math.max(...future.map(candle => Number(candle.high)));
+  const minClose = Math.min(...future.map(candle => Number(candle.close)));
+  const maxClose = Math.max(...future.map(candle => Number(candle.close)));
+  const downMove = (price - minLow) / price;
+  const upMove = (maxHigh - price) / price;
+  const closesBelow = minClose < price * (1 - breakPct);
+  const closesAbove = maxClose > price * (1 + breakPct);
+
+  if (downMove >= reactionPct && !closesAbove) {
+    return {
+      date,
+      kind: "resistance",
+      label: `受压回落（${getClusterContact(cluster)}）`,
+      movePct: -downMove,
+    };
+  }
+
+  if (upMove >= reactionPct && !closesBelow) {
+    return {
+      date,
+      kind: "support",
+      label: `支撑拉回（${getClusterContact(cluster)}）`,
+      movePct: upMove,
+    };
+  }
+
+  if (closesBelow || closesAbove) {
+    return {
+      date,
+      kind: "break",
+      label: closesBelow ? "收盘跌破" : "收盘突破",
+      movePct: closesBelow ? -downMove : upMove,
+    };
+  }
+
+  return null;
+}
+
+function getClusterContact(cluster) {
+  if (cluster.some(item => item.contact === "实体")) return "实体";
+  if (cluster.some(item => item.contact === "穿越")) return "穿越";
+  if (cluster.some(item => item.contact === "上影")) return "上影";
+  if (cluster.some(item => item.contact === "下影")) return "下影";
+  return cluster[0]?.contact || "";
+}
+
+function getGannLoopForPrice(price) {
+  return Math.max(80, Math.ceil((Math.sqrt(Math.max(1, price)) - 1) / 2) + 4);
+}
+
+function formatSignedPercent(value) {
+  const percent = Number(value || 0) * 100;
+  return `${percent >= 0 ? "+" : ""}${percent.toFixed(2)}%`;
 }
 
 function registerMajorTurnMarker() {
@@ -1012,7 +1346,7 @@ function registerMajorTurnMarker() {
             size: 12,
             weight: 800,
           },
-          ignoreEvent: true,
+          ignoreEvent: false,
         },
       ];
     },
@@ -1145,18 +1479,50 @@ function createPriceLineOverlay(level, anchorPoint) {
 
 function handleCandleClick(payload) {
   const point = payload?.data || payload?.kLineData || payload?.current || payload;
-  const high = Number(point?.high);
-  const low = Number(point?.low);
-  const close = Number(point?.close);
 
-  if (!Number.isFinite(high) || !Number.isFinite(low)) return;
+  const turn = findMajorTurnFromKLinePoint(point);
+  if (turn) {
+    selectMajorTurn(turn);
+  }
+}
 
-  const useHigh = Number.isFinite(close) ? close >= (high + low) / 2 : true;
-  emit("candle-select", {
-    price: useHigh ? high : low,
-    date: timestampToDate(point?.timestamp),
-    kind: useHigh ? "high" : "low",
-  });
+function handleChartHostClick(event) {
+  if (!chartApi || !chartHost.value || !majorTurnList.value.length) return;
+
+  const rect = chartHost.value.getBoundingClientRect();
+  const x = event.clientX - rect.left;
+  const point = chartApi.convertFromPixel?.({ x }, { paneId: "candle_pane" });
+  const dataIndex = Math.round(Number(point?.dataIndex));
+
+  if (!Number.isFinite(dataIndex)) return;
+
+  const turn = findNearestMajorTurnByIndex(dataIndex, 2);
+  if (turn) {
+    selectMajorTurn(turn);
+  }
+}
+
+function findMajorTurnFromKLinePoint(point) {
+  const timestamp = Number(point?.timestamp);
+  if (Number.isFinite(timestamp)) {
+    const exact = majorTurnList.value.find(item => Number(item.timestamp) === timestamp);
+    if (exact) return exact;
+  }
+
+  const chartList = chartApi?.getDataList?.() || [];
+  const dataIndex = chartList.findIndex(item => Number(item.timestamp) === timestamp);
+  return dataIndex >= 0 ? findNearestMajorTurnByIndex(dataIndex, 1) : null;
+}
+
+function findNearestMajorTurnByIndex(dataIndex, tolerance) {
+  return majorTurnList.value.reduce((best, turn) => {
+    const distance = Math.abs(Number(turn.index) - dataIndex);
+    if (distance > tolerance) return best;
+    if (!best || distance < best.distance) {
+      return { turn, distance };
+    }
+    return best;
+  }, null)?.turn || null;
 }
 
 function createSymbolInfo(symbol, market) {
@@ -1897,6 +2263,81 @@ const indicatorParams = {
   overflow: hidden;
 }
 
+.major-turn-html-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+}
+
+.major-turn-label {
+  position: absolute;
+  min-width: 42px;
+  min-height: 24px;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: 4px;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+  pointer-events: auto;
+  transform: translateX(-50%);
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.18);
+}
+
+.major-turn-label.high {
+  background: #d94141;
+}
+
+.major-turn-label.low {
+  background: #12875a;
+}
+
+.major-turn-label::before,
+.major-turn-label::after {
+  position: absolute;
+  left: 50%;
+  content: "";
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+.major-turn-label::before {
+  width: 2px;
+  height: 18px;
+  border-radius: 999px;
+}
+
+.major-turn-label.high::before {
+  top: 100%;
+  background: #d94141;
+}
+
+.major-turn-label.low::before {
+  bottom: 100%;
+  background: #12875a;
+}
+
+.major-turn-label.high::after {
+  top: calc(100% + 16px);
+  border-right: 5px solid transparent;
+  border-left: 5px solid transparent;
+  border-top: 6px solid #d94141;
+}
+
+.major-turn-label.low::after {
+  bottom: calc(100% + 16px);
+  border-right: 5px solid transparent;
+  border-left: 5px solid transparent;
+  border-bottom: 6px solid #12875a;
+}
+
+.major-turn-label:hover {
+  filter: brightness(1.06);
+}
+
 .chart-loading-mask {
   position: absolute;
   inset: 0;
@@ -1924,6 +2365,82 @@ const indicatorParams = {
 
 .chart-loading-text {
   line-height: 1;
+}
+
+.turn-stat-panel {
+  border-top: 1px solid #ebedf1;
+  background: #ffffff;
+}
+
+.turn-stat-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #ebedf1;
+}
+
+.turn-stat-head strong {
+  display: block;
+  color: #101828;
+  font-size: 14px;
+}
+
+.turn-stat-head span {
+  display: block;
+  margin-top: 2px;
+  color: #667085;
+  font-size: 12px;
+}
+
+.turn-stat-close {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid #d9e2f0;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #344054;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.turn-stat-close:hover {
+  border-color: #1677ff;
+  color: #1677ff;
+}
+
+.turn-stat-table-wrap {
+  overflow-x: auto;
+}
+
+.turn-stat-table {
+  width: 100%;
+  min-width: 920px;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.turn-stat-table th,
+.turn-stat-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid #eef1f5;
+  color: #344054;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.turn-stat-table th {
+  background: #f8fafc;
+  color: #667085;
+  font-weight: 800;
+}
+
+.turn-stat-table .price-cell {
+  color: #101828;
+  font-size: 13px;
+  font-weight: 900;
 }
 
 .chart-loading-fade-enter-active,

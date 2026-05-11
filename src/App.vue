@@ -324,7 +324,14 @@ function handleMarketPriceSelect(point) {
   calculateTrendFromCell(matrixPoint.r, matrixPoint.c);
 }
 
-function handleProjectPrice(price) {
+function handleProjectPrice(payload, direction) {
+  const price = typeof payload === "object" ? payload?.price : payload;
+  const nextDirection = typeof payload === "object" ? payload?.direction : direction;
+
+  if (nextDirection === "up" || nextDirection === "down") {
+    form.trendDirection = nextDirection;
+  }
+
   handleMarketPriceSelect({ price });
   logProjectedPriceLevels(price);
 }
