@@ -219,7 +219,7 @@
 </template>
 
 <script setup>
-import { ActionType, dispose, init, LineType, LoadDataType } from "klinecharts";
+import { ActionType, dispose, init, LineType, LoadDataType, registerOverlay } from "klinecharts";
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 
 const props = defineProps({
@@ -266,6 +266,7 @@ const props = defineProps({
 });
 
 const emit = defineEmits(["candle-select"]);
+let majorTurnMarkerRegistered = false;
 const chartHost = ref(null);
 let chartApi = null;
 let overlayRenderTimer = null;
@@ -510,6 +511,8 @@ watch(
 
 function initChart() {
   if (!chartHost.value) return;
+
+  registerMajorTurnMarker();
 
   chartApi = init(chartHost.value, {
     timezone: "Asia/Shanghai",
@@ -900,11 +903,14 @@ function createMajorTurnOverlay(turn) {
   const tagColor = isHigh ? "#d94141" : "#12875a";
 
   return {
-    name: "simpleAnnotation",
+    name: "majorTurnMarker",
     groupId: "major-turns",
     lock: true,
     visible: true,
-    extendData: label,
+    extendData: {
+      label,
+      type: turn.type,
+    },
     points: [{
       dataIndex: turn.index,
       timestamp: turn.timestamp,
@@ -935,6 +941,82 @@ function createMajorTurnOverlay(turn) {
       },
     },
   };
+}
+
+function registerMajorTurnMarker() {
+  if (majorTurnMarkerRegistered) return;
+  majorTurnMarkerRegistered = true;
+
+  registerOverlay({
+    name: "majorTurnMarker",
+    totalStep: 2,
+    createPointFigures: ({ overlay, coordinates }) => {
+      const point = coordinates[0];
+      const isHigh = overlay.extendData?.type === "high";
+      const label = overlay.extendData?.label || "";
+      const color = isHigh ? "#d94141" : "#12875a";
+      const direction = isHigh ? -1 : 1;
+      const startY = point.y + direction * 7;
+      const lineEndY = startY + direction * 28;
+      const labelY = lineEndY + direction * 6;
+
+      return [
+        {
+          type: "line",
+          attrs: { coordinates: [{ x: point.x, y: startY }, { x: point.x, y: lineEndY }] },
+          styles: {
+            color,
+            size: 1,
+            style: LineType.Dashed,
+            dashedValue: [4, 2],
+          },
+          ignoreEvent: true,
+        },
+        {
+          type: "polygon",
+          attrs: {
+            coordinates: isHigh
+              ? [
+                  { x: point.x, y: lineEndY },
+                  { x: point.x - 4, y: lineEndY - 6 },
+                  { x: point.x + 4, y: lineEndY - 6 },
+                ]
+              : [
+                  { x: point.x, y: lineEndY },
+                  { x: point.x - 4, y: lineEndY + 6 },
+                  { x: point.x + 4, y: lineEndY + 6 },
+                ],
+          },
+          styles: { color },
+          ignoreEvent: true,
+        },
+        {
+          type: "text",
+          attrs: {
+            x: point.x,
+            y: labelY,
+            text: label,
+            align: "center",
+            baseline: isHigh ? "bottom" : "top",
+          },
+          styles: {
+            color: "#ffffff",
+            backgroundColor: color,
+            borderColor: color,
+            borderSize: 1,
+            borderRadius: 3,
+            paddingLeft: 5,
+            paddingRight: 5,
+            paddingTop: 3,
+            paddingBottom: 3,
+            size: 12,
+            weight: 800,
+          },
+          ignoreEvent: true,
+        },
+      ];
+    },
+  });
 }
 
 function renderLevelOverlays() {
@@ -1494,8 +1576,8 @@ function buildChartStyles(settings = props.chartSettings || {}) {
         noChangeWickColor: "#8a94a6",
       },
       priceMark: {
-        high: { show: true, color: "#c93636", textOffset: 6, textSize: 12, textWeight: "700" },
-        low: { show: true, color: "#118357", textOffset: 6, textSize: 12, textWeight: "700" },
+        high: { show: true, color: "#c93636", textOffset: 8, textSize: 15, textWeight: "800" },
+        low: { show: true, color: "#118357", textOffset: 8, textSize: 15, textWeight: "800" },
         last: {
           show: true,
           upColor: "#e34848",
