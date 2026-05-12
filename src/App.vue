@@ -102,7 +102,7 @@ const marketForm = reactive({
   symbol: "AAPL",
   anchorPrice: null,
   priceUnit: 1,
-  chartHeight: 1000,
+  chartHeight: 1200,
 });
 
 const cellSize = computed(() => {
