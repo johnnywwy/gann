@@ -974,7 +974,7 @@ function detectMajorTurns(candles, period) {
     }
   }
 
-  return compressMajorTurns(candidates, minMovePct).slice(-18);
+  return compressMajorTurns(candidates, minMovePct);
 }
 
 function compressMajorTurns(candidates, minMovePct) {
