@@ -24,6 +24,11 @@
         :mid="mid"
         :mode-enabled="form.modeEnabled"
         :trend-palette="trendPalette"
+        :selected-cell="selectedCell"
+        :highlight-pos="highlightPos"
+        :trend-cells="trendCells"
+        :main-points="lastTrendResult?.trendMain || []"
+        :cross-points="lastTrendResult?.trendCross || []"
         :get-cell-style="getCellStyle"
         :get-cell-class="getCellClass"
         @cell-click="handleCellClick"
@@ -58,16 +63,7 @@ import {
 } from "./utils/gannMatrix";
 
 function getInitialCellScale() {
-  if (typeof window === "undefined") return 110;
-
-  const width = window.innerWidth;
-
-  if (width >= 1440) return 135;
-  if (width >= 1180) return 122;
-  if (width >= 900) return 112;
-  if (width >= 760) return 102;
-
-  return 92;
+  return 60;
 }
 
 /**
@@ -96,7 +92,8 @@ const trendCells = ref([]);
 const lastTrendResult = ref(null);
 const searchNumber = ref(null);
 const highlightPos = ref({ r: -1, c: -1 });
-const BOARD_REFERENCE_SIZE = 680;
+const BOARD_REFERENCE_SIZE = 1040;
+const MIN_CELL_SIZE = 20;
 const marketForm = reactive({
   market: "us",
   symbol: "AAPL",
@@ -106,12 +103,13 @@ const marketForm = reactive({
 });
 
 const cellSize = computed(() => {
-  if (!matrix.value.length) return 40;
+  if (!matrix.value.length) return MIN_CELL_SIZE;
 
   const autoSize = Math.floor(BOARD_REFERENCE_SIZE / matrix.value.length);
-  const size = Math.floor(autoSize * (form.cellScale / 100));
+  const baseSize = Math.max(autoSize, MIN_CELL_SIZE);
+  const size = Math.floor(baseSize * (form.cellScale / 100));
 
-  return Math.max(12, size);
+  return Math.max(MIN_CELL_SIZE, size);
 });
 
 /**
@@ -199,10 +197,24 @@ function getChartTrendLines(result) {
   }
 
   const trendFilter = form.trendDirection === "up" ? isHigherTrendPoint : isLowerTrendPoint;
+  const baseMain = filterChartTrendPoints(result.mainLine, result.clickedValue, trendFilter);
+  const baseCross = filterChartTrendPoints(result.crossLinePoints, result.clickedValue, trendFilter);
+  const mainForwardLine = form.trendDirection === "up"
+    ? inferForwardLine(selectedCell.value, baseMain, matrix.value)
+    : null;
+  const crossForwardLine = form.trendDirection === "up"
+    ? inferPerpendicularLine(mainForwardLine, selectedCell.value, baseCross, matrix.value)
+    : null;
+  const forwardMain = form.trendDirection === "up"
+    ? getForwardChartPointsForUptrend(matrix.value, result.clickedValue, mainForwardLine)
+    : [];
+  const forwardCross = form.trendDirection === "up"
+    ? getForwardChartPointsForUptrend(matrix.value, result.clickedValue, crossForwardLine)
+    : [];
 
   return {
-    trendMain: filterChartTrendPoints(result.mainLine, result.clickedValue, trendFilter),
-    trendCross: filterChartTrendPoints(result.crossLinePoints, result.clickedValue, trendFilter),
+    trendMain: mergeTrendPoints(baseMain, forwardMain),
+    trendCross: mergeTrendPoints(baseCross, forwardCross),
   };
 }
 
@@ -212,6 +224,93 @@ function getChartTrendLines(result) {
 function filterChartTrendPoints(points, clickedValue, predicate) {
   const anchor = Number(clickedValue);
   return (points || []).filter(point => predicate(Number(point.value ?? point), anchor));
+}
+
+/**
+ * 上升趋势的 K 线投影需要额外向后找价格级别。
+ * 例如点击 41 时，同一横行后续级别为 52、70、85、107。
+ * 这些只用于 K 线，不参与九方图本身的高亮渲染。
+ */
+function getForwardChartPointsForUptrend(sourceMatrix, clickedValue, line) {
+  if (!sourceMatrix?.length || !line) return [];
+
+  const anchor = Number(clickedValue);
+  return getMatrixLinePoints(sourceMatrix, line)
+    .filter(point => Number(point.value) > anchor)
+    .sort((a, b) => Number(a.value) - Number(b.value));
+}
+
+function inferForwardLine(cell, seedPoints, sourceMatrix) {
+  const seed = (seedPoints || []).find(point => Number(point?.value) > Number(sourceMatrix[cell.r]?.[cell.c]));
+  if (!seed) return { type: "row", value: cell.r };
+
+  if (seed.r === cell.r) return { type: "row", value: cell.r };
+  if (seed.c === cell.c) return { type: "column", value: cell.c };
+  if (seed.r - seed.c === cell.r - cell.c) return { type: "mainDiagonal", value: cell.r - cell.c };
+  if (seed.r + seed.c === cell.r + cell.c) return { type: "antiDiagonal", value: cell.r + cell.c };
+
+  return { type: "row", value: cell.r };
+}
+
+function inferPerpendicularLine(mainLine, cell, seedPoints, sourceMatrix) {
+  if (!mainLine || !cell) return null;
+
+  const center = Math.floor((sourceMatrix?.length || 1) / 2);
+  const seed = (seedPoints || []).find(point => Number(point?.value) > Number(sourceMatrix[cell.r]?.[cell.c]));
+
+  if (mainLine.type === "row") {
+    return { type: "column", value: Number.isInteger(seed?.c) ? seed.c : center };
+  }
+
+  if (mainLine.type === "column") {
+    return { type: "row", value: Number.isInteger(seed?.r) ? seed.r : center };
+  }
+
+  if (mainLine.type === "mainDiagonal") {
+    return { type: "antiDiagonal", value: Number.isInteger(seed?.r) && Number.isInteger(seed?.c) ? seed.r + seed.c : center * 2 };
+  }
+
+  if (mainLine.type === "antiDiagonal") {
+    return { type: "mainDiagonal", value: Number.isInteger(seed?.r) && Number.isInteger(seed?.c) ? seed.r - seed.c : 0 };
+  }
+
+  return null;
+}
+
+function getMatrixLinePoints(sourceMatrix, line) {
+  const points = [];
+
+  for (let r = 0; r < sourceMatrix.length; r++) {
+    for (let c = 0; c < sourceMatrix[r].length; c++) {
+      if (isPointOnLine(r, c, line)) {
+        points.push({ r, c, value: sourceMatrix[r][c] });
+      }
+    }
+  }
+
+  return points;
+}
+
+function isPointOnLine(r, c, line) {
+  if (line.type === "row") return r === line.value;
+  if (line.type === "column") return c === line.value;
+  if (line.type === "mainDiagonal") return r - c === line.value;
+  if (line.type === "antiDiagonal") return r + c === line.value;
+  return false;
+}
+
+function mergeTrendPoints(...groups) {
+  const seen = new Set();
+  const result = [];
+
+  groups.flat().forEach(point => {
+    const value = Number(point?.value ?? point);
+    if (!Number.isFinite(value) || seen.has(value)) return;
+    seen.add(value);
+    result.push(point);
+  });
+
+  return result.sort((a, b) => Number(a.value ?? a) - Number(b.value ?? b));
 }
 
 function isHigherTrendPoint(value, anchor) {
@@ -248,17 +347,9 @@ function handleCellClick(r, c) {
 
   selectedCell.value = { r, c };
 
-  const result = calculateClickTrend(matrix.value, r, c, form.trendDirection);
+  const result = calculateClickTrend(matrix.value, r, c, form.trendDirection, form);
   lastTrendResult.value = result;
   trendCells.value = result.trendCells;
-
-  console.log("点击值:", result.clickedValue);
-  console.log("主线:", result.mainLine.map(x => x.value));
-  console.log("副线:", result.crossLine.map(x => x.value));
-  console.log("mainLinePoints", result.mainLinePoints);
-  console.log("crossLinePoints", result.crossLinePoints);
-  console.log("趋势主线:", result.trendMain.map(x => x.value));
-  console.log("趋势副线:", result.trendCross.map(x => x.value));
 }
 
 function calculateTrendFromCell(r, c) {
@@ -266,7 +357,7 @@ function calculateTrendFromCell(r, c) {
 
   selectedCell.value = { r, c };
 
-  const result = calculateClickTrend(matrix.value, r, c, form.trendDirection);
+  const result = calculateClickTrend(matrix.value, r, c, form.trendDirection, form);
   lastTrendResult.value = result;
   trendCells.value = result.trendCells;
 }
@@ -333,100 +424,6 @@ function handleProjectPrice(payload, direction) {
   }
 
   handleMarketPriceSelect({ price });
-  logProjectedPriceLevels(price);
-}
-
-function logProjectedPriceLevels(anchorPrice) {
-  const anchor = Number(anchorPrice);
-  const levels = rankProjectedLogLevels(projectedLevels.value, anchor);
-
-  console.group("股票走势推演点位");
-  console.log("输入价格:", anchor);
-  console.log("趋势方向:", form.trendDirection === "up" ? "上升" : "下降");
-  console.log("九方图锚点:", selectedValueLabel.value);
-  console.log("推演点位数量:", levels.length);
-
-  levels.forEach(level => {
-    console.log(
-      `${level.label}: ${level.price}`,
-      {
-        价格: level.price,
-        矩阵值: level.matrixValue,
-        线类型: level.lineType === "main" ? "趋势主线" : "趋势副线",
-        距离输入价: level.distance,
-      }
-    );
-  });
-
-  console.table(levels.map(level => ({
-    名称: level.label,
-    价格: level.price,
-    矩阵值: level.matrixValue,
-    线类型: level.lineType === "main" ? "趋势主线" : "趋势副线",
-    距离输入价: level.distance,
-  })));
-  console.groupEnd();
-}
-
-function rankProjectedLogLevels(levels, anchorPrice) {
-  if (!Number.isFinite(anchorPrice)) return [];
-
-  const deduped = dedupeProjectedLogLevels(levels)
-    .map(level => ({
-      ...level,
-      price: roundMarketPrice(level.price),
-      distance: roundMarketPrice(Math.abs(Number(level.price) - anchorPrice)),
-      kind: Number(level.price) < anchorPrice ? "support" : "resistance",
-    }))
-    .filter(level => Number.isFinite(level.price) && level.price >= 10 && level.distance > 0);
-
-  const supports = assignProjectedLogRanks(
-    deduped.filter(level => level.kind === "support"),
-    "支撑位"
-  );
-  const resistances = assignProjectedLogRanks(
-    deduped.filter(level => level.kind === "resistance"),
-    "阻力位"
-  );
-
-  return sortLevelsByTrendDirection([...supports, ...resistances], form.trendDirection);
-}
-
-function dedupeProjectedLogLevels(levels) {
-  const buckets = new Map();
-
-  (levels || []).forEach(level => {
-    const price = Number(level.price);
-    if (!Number.isFinite(price)) return;
-
-    const key = roundMarketPrice(price);
-    const current = buckets.get(key);
-    const priority = level.lineType === "main" ? 2 : 1;
-
-    if (!current || priority > current.priority) {
-      buckets.set(key, {
-        ...level,
-        price,
-        priority,
-      });
-    }
-  });
-
-  return [...buckets.values()];
-}
-
-function assignProjectedLogRanks(levels, label) {
-  return levels
-    .sort((a, b) => a.distance - b.distance)
-    .map((level, index) => ({
-      ...level,
-      rank: index + 1,
-      label: `第${index + 1}${label}`,
-    }));
-}
-
-function roundMarketPrice(value) {
-  return Math.round(Number(value) * 10000) / 10000;
 }
 
 function sortLevelsByTrendDirection(levels, direction) {
@@ -447,7 +444,7 @@ function ensureMatrixCoversPrice(price) {
   let min = Math.min(...values);
   let max = Math.max(...values);
 
-  while ((target < min || target > max) && form.loop < 80) {
+  while ((target < min || target > max) && form.loop < 100) {
     form.loop += 1;
     matrix.value = generateGannMatrix(form.base, form.step, form.loop);
     values = matrix.value.flat();

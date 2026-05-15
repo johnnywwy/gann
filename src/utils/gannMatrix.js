@@ -1,943 +1,631 @@
-/**
- * 以中心点为起点，按螺旋顺序生成 Gann 九方图矩阵。
- */
-export function generateGannMatrix(base, step, loop) {
-  const size = 2 * loop + 1;
-  const mat = Array.from({ length: size }, () => Array(size).fill(null));
+const CLASS_TABLE = [0, 0, 0, 1, 2, 3, 3, 4, 4];
 
-  const midIndex = Math.floor(size / 2);
-  let num = base;
-  let x = midIndex;
-  let y = midIndex;
+export function generateGannMatrix(base = 1, step = 1, loop = 9) {
+  const radius = Math.max(1, Number(loop) || 1);
+  const size = radius * 2 + 1;
+  const max = size * size;
+  const { numToPos } = buildGannSpiral(max);
+  const matrix = Array.from({ length: size }, () => Array(size).fill(null));
 
-  mat[y][x] = num;
-
-  const dirs = [
-    [-1, 0],
-    [0, -1],
-    [1, 0],
-    [0, 1],
-  ];
-
-  let stepCount = 1;
-  let dirIndex = 0;
-
-  while (true) {
-    for (let i = 0; i < 2; i++) {
-      const [dx, dy] = dirs[dirIndex % 4];
-
-      for (let s = 0; s < stepCount; s++) {
-        num += step;
-        x += dx;
-        y += dy;
-
-        if (x < 0 || y < 0 || x >= size || y >= size) {
-          return mat;
-        }
-
-        mat[y][x] = num;
-      }
-
-      dirIndex++;
-    }
-
-    stepCount++;
+  for (let n = 1; n <= max; n += 1) {
+    const pos = numToPos.get(n);
+    matrix[pos.row + radius][pos.col + radius] = base + (n - 1) * step;
   }
+
+  return matrix;
 }
 
-/**
- * 根据斜率计算一条穿过矩阵中心的辅助线在 SVG 画布中的端点。
- */
-export function getLineCoordsBySlope(k, totalSize, centerPx) {
-  if (totalSize === 0) return null;
-
-  const total = totalSize;
-  const cp = centerPx;
-  const candidates = [
-    { x: cp - cp / k, y: 0 },
-    { x: cp + (total - cp) / k, y: total },
-    { x: 0, y: cp - k * cp },
-    { x: total, y: cp + k * (total - cp) },
-  ];
-
-  const valid = candidates.filter(p =>
-    p.x >= -0.5 && p.x <= total + 0.5 &&
-    p.y >= -0.5 && p.y <= total + 0.5
-  );
-
-  if (valid.length < 2) return null;
-
-  return {
-    x1: valid[0].x,
-    y1: valid[0].y,
-    x2: valid[valid.length - 1].x,
-    y2: valid[valid.length - 1].y,
-  };
-}
-
-/**
- * 在矩阵中查找某个数值对应的坐标。
- */
 export function findNumberPosition(matrix, target) {
-  for (let r = 0; r < matrix.length; r++) {
-    for (let c = 0; c < matrix.length; c++) {
-      if (matrix[r][c] === target) {
-        return { r, c };
-      }
+  const value = Number(target);
+  if (!Number.isFinite(value)) return { r: -1, c: -1 };
+
+  for (let r = 0; r < matrix.length; r += 1) {
+    for (let c = 0; c < matrix[r].length; c += 1) {
+      if (Number(matrix[r][c]) === value) return { r, c };
     }
   }
 
   return { r: -1, c: -1 };
 }
 
-/**
- * 取出点击点所在的主对角线。
- */
-export function getMainDiagonal(matrix, r, c) {
-  const result = [];
-  const mainConst = r - c;
-
-  for (let i = 0; i < matrix.length; i++) {
-    for (let j = 0; j < matrix.length; j++) {
-      if (i - j === mainConst) {
-        result.push({ r: i, c: j, value: matrix[i][j] });
-      }
-    }
-  }
-
-  return result;
+export function getLineCoordsBySlope(k, totalSize, centerPx) {
+  return clipLineThroughCenter(k, centerPx, totalSize);
 }
 
-/**
- * 取出穿过矩阵中心的副对角线。
- */
-export function getCenterAntiDiagonal(matrix) {
-  const result = [];
-  const center = Math.floor(matrix.length / 2);
-  const centerConst = center * 2;
+export function calculateClickTrend(matrix, r, c, trendDirection, options = {}) {
+  const clickedValue = matrix[r]?.[c];
+  const base = Number(options.base ?? 1);
+  const step = Number(options.step ?? 1);
+  const loop = Math.max(1, Number(options.loop ?? Math.floor(matrix.length / 2)) || 1);
+  const rawIndex = step === 0 ? clickedValue : (clickedValue - base) / step + 1;
+  const clickedIndex = Math.round(rawIndex);
 
-  for (let i = 0; i < matrix.length; i++) {
-    for (let j = 0; j < matrix.length; j++) {
-      if (i + j === centerConst) {
-        result.push({ r: i, c: j, value: matrix[i][j] });
-      }
-    }
-  }
+  const highlight = calcHighlights(clickedIndex, trendDirection, loop);
+  const toValue = n => base + (n - 1) * step;
+  const mainValues = highlight.mainHighlight.map(toValue);
+  const crossValues = highlight.subHighlight.map(toValue);
+  const mainLine = valuesToPoints(matrix, mainValues);
+  const crossLine = valuesToPoints(matrix, crossValues);
 
-  return result;
+  return {
+    clickedValue,
+    clickedIndex,
+    trend: trendDirection,
+    point: highlight.point,
+    absPoint: highlight.absPoint,
+    type: highlight.type,
+    sector: highlight.sector,
+    distance: highlight.distance,
+    mainLine,
+    crossLine,
+    mainLinePoints: mainLine,
+    crossLinePoints: crossLine,
+    trendMain: mainLine,
+    trendCross: crossLine,
+    trendCells: [...mainLine, ...crossLine],
+    raw: highlight,
+  };
 }
 
-/**
- * 下降模式下，主对角线只保留比点击值更小的点。
- */
-export function getMainDiagonalDown(mainLine, clickedValue) {
-  return mainLine.filter(item => item.value < clickedValue);
-}
-
-/**
- * 下降模式下，从中心点向外截取副对角线中小于点击值的点。
- */
-export function getAntiDiagonalDown(antiLine, clickedValue) {
-  const result = [];
-  const oneIndex = getLineCenterIndex(antiLine);
-  if (oneIndex === -1) return [];
-
-  for (let i = oneIndex - 1; i >= 0; i--) {
-    const current = antiLine[i];
-    if (current.value < clickedValue) {
-      result.push(current);
-    } else {
-      break;
-    }
-  }
-
-  return result;
-}
-
-/**
- * 收集穿过矩阵中心的主要参考线，供调试和归属判断使用。
- */
 export function getAllCenterLines(matrix) {
   const size = matrix.length;
   const center = Math.floor(size / 2);
+  const lines = { diag1: [], diag2: [], vertical: [], horizontal: [] };
 
-  const lines = {
-    diag1: [],
-    diag2: [],
-    vertical: [],
-    horizontal: [],
-    horse21: [],
-    horse21_m: [],
-    horse12: [],
-    horse12_m: [],
-  };
-
-  for (let i = 0; i < size; i++) {
-    for (let j = 0; j < size; j++) {
-      const rowDiff = i - center;
-      const colDiff = j - center;
-
-      if (i === j) lines.diag1.push({ r: i, c: j, value: matrix[i][j] });
-      if (i + j === center * 2) lines.diag2.push({ r: i, c: j, value: matrix[i][j] });
-      if (j === center) lines.vertical.push({ r: i, c: j, value: matrix[i][j] });
-      if (i === center) lines.horizontal.push({ r: i, c: j, value: matrix[i][j] });
-      if (rowDiff === 2 * colDiff) lines.horse21.push({ r: i, c: j, value: matrix[i][j] });
-      if (rowDiff === -2 * colDiff) lines.horse21_m.push({ r: i, c: j, value: matrix[i][j] });
-      if (colDiff === 2 * rowDiff) lines.horse12.push({ r: i, c: j, value: matrix[i][j] });
-      if (colDiff === -2 * rowDiff) lines.horse12_m.push({ r: i, c: j, value: matrix[i][j] });
+  for (let r = 0; r < size; r += 1) {
+    for (let c = 0; c < size; c += 1) {
+      const item = { r, c, value: matrix[r][c] };
+      if (r === c) lines.diag1.push(item);
+      if (r + c === center * 2) lines.diag2.push(item);
+      if (c === center) lines.vertical.push(item);
+      if (r === center) lines.horizontal.push(item);
     }
   }
-
-  Object.keys(lines).forEach(key => {
-    lines[key].sort((a, b) => a.r - b.r || a.c - b.c);
-  });
 
   return lines;
 }
 
-/**
- * 判断某个值落在哪条中心参考线上。
- */
 export function findBelongLine(lines, clickedValue) {
-  for (const key in lines) {
-    const exists = lines[key].some(item => item.value === clickedValue);
-    if (exists) return key;
+  for (const key of Object.keys(lines || {})) {
+    if (lines[key].some(item => item.value === clickedValue)) return key;
   }
-
   return null;
 }
 
-/**
- * 根据点击点的坐标关系，为当前点选出主线和副线。
- * 这里同时处理普通对角线、十字线以及 2:1 骑士线附近的特殊修正。
- */
-export function getCrossLines(matrix, clickedValue, r, c) {
-  const size = matrix.length;
-  const center = Math.floor(size / 2);
-  const dr = r - center;
-  const dc = c - center;
-  const absDr = Math.abs(dr);
-  const absDc = Math.abs(dc);
-
-  let mainLine = [];
-  let crossLine = [];
-  const touchesHorseAxis = mainLineTouchesOuterHorse21(matrix, r, c);
-
-  if (touchesHorseAxis && absDr !== absDc) {
-    if (absDr > absDc) {
-      for (let i = 0; i < size; i++) mainLine.push({ r: i, c, value: matrix[i][c] });
-      for (let j = 0; j < size; j++) crossLine.push({ r: center, c: j, value: matrix[center][j] });
-      console.log("进入2:1骑士线修正：垂直主轴逻辑");
-    } else {
-      for (let j = 0; j < size; j++) mainLine.push({ r, c: j, value: matrix[r][j] });
-      for (let i = 0; i < size; i++) crossLine.push({ r: i, c: center, value: matrix[i][center] });
-      console.log("进入2:1骑士线修正：水平主轴逻辑");
-    }
-
-    return { mainLine, crossLine };
-  }
-
-  const isCoreSpecial = (absDr + absDc <= 4) && (absDr !== 0 && absDc !== 0);
-  const layer = Math.max(absDr, absDc);
-  const minorAxis = Math.min(absDr, absDc);
-  const isLeftBottom = dr > 0 && dc < 0;
-  const isOuterCrossSpecial =
-    (layer === 5 && minorAxis === 3 && !isLeftBottom) ||
-    (layer === 7 && minorAxis === 4 && !(isLeftBottom && absDr > absDc));
-
-  if (!isCoreSpecial && isOuterCrossSpecial) {
-    if (absDr > absDc) {
-      for (let i = 0; i < size; i++) mainLine.push({ r: i, c, value: matrix[i][c] });
-      for (let j = 0; j < size; j++) crossLine.push({ r: center, c: j, value: matrix[center][j] });
-      console.log("进入外圈十字线修正：垂直主轴逻辑");
-    } else {
-      for (let j = 0; j < size; j++) mainLine.push({ r, c: j, value: matrix[r][j] });
-      for (let i = 0; i < size; i++) crossLine.push({ r: i, c: center, value: matrix[i][center] });
-      console.log("进入外圈十字线修正：水平主轴逻辑");
-    }
-
-    return { mainLine, crossLine };
-  }
-
-  const k = absDc === 0 ? 999 : absDr / absDc;
-
-  if (!isCoreSpecial && k > 1.75) {
-    for (let i = 0; i < size; i++) mainLine.push({ r: i, c, value: matrix[i][c] });
-    for (let j = 0; j < size; j++) crossLine.push({ r: center, c: j, value: matrix[center][j] });
-    console.log("进入垂直主轴逻辑");
-  } else if (!isCoreSpecial && k <= 0.57) {
-    for (let j = 0; j < size; j++) mainLine.push({ r, c: j, value: matrix[r][j] });
-    for (let i = 0; i < size; i++) crossLine.push({ r: i, c: center, value: matrix[i][center] });
-    console.log("进入水平主轴逻辑");
-  } else {
-    console.log("进入对角轴逻辑");
-    const isMainDiag = (dr * dc > 0);
-
-    for (let i = 0; i < size; i++) {
-      for (let j = 0; j < size; j++) {
-        if (isMainDiag) {
-          if (i - j === r - c) mainLine.push({ r: i, c: j, value: matrix[i][j] });
-          if (i + j === center * 2) crossLine.push({ r: i, c: j, value: matrix[i][j] });
-        } else {
-          if (i + j === r + c) mainLine.push({ r: i, c: j, value: matrix[i][j] });
-          if (i - j === 0) crossLine.push({ r: i, c: j, value: matrix[i][j] });
-        }
-      }
-    }
-  }
-
-  mainLine.sort((a, b) => a.r - b.r || a.c - b.c);
-  crossLine.sort((a, b) => a.r - b.r || a.c - b.c);
-
-  return { mainLine, crossLine };
-}
-
-/**
- * 计算一个点位于中心外第几圈。
- */
-function getLayer(r, c, center) {
-  return Math.max(Math.abs(r - center), Math.abs(c - center));
-}
-
-/**
- * 对于穿过矩阵中心且已排序的线，中心点总在中间索引。
- */
-function getLineCenterIndex(points) {
-  return points.length ? Math.floor(points.length / 2) : -1;
-}
-
-/**
- * 判断某个点是否位于 2:1 或 1:2 骑士线族上。
- */
-function isHorse21Point(r, c, center) {
-  const rowDiff = r - center;
-  const colDiff = c - center;
-
-  return (
-    rowDiff === 2 * colDiff ||
-    rowDiff === -2 * colDiff ||
-    colDiff === 2 * rowDiff ||
-    colDiff === -2 * rowDiff
-  );
-}
-
-/**
- * 收集矩阵中所有骑士线上的点，便于做特殊规则修正。
- */
-function getHorse21Points(matrix) {
-  const center = Math.floor(matrix.length / 2);
-  const points = [];
-
-  for (let r = 0; r < matrix.length; r++) {
-    for (let c = 0; c < matrix.length; c++) {
-      if (isHorse21Point(r, c, center)) {
-        points.push({ r, c, value: matrix[r][c] });
-      }
-    }
-  }
-
-  return points;
-}
-
-/**
- * 判断当前主线在穿过中心前，是否会先碰到内圈骑士线点。
- */
-function mainLineTouchesOuterHorse21(matrix, r, c) {
-  const center = Math.floor(matrix.length / 2);
-  const clickLayer = getLayer(r, c, center);
-  const absRowDiff = Math.abs(r - center);
-  const absColDiff = Math.abs(c - center);
-  const majorDiff = Math.max(absRowDiff, absColDiff);
-  const minorDiff = Math.min(absRowDiff, absColDiff);
-
-  if (clickLayer <= 2) return false;
-  if (minorDiff === 0 || majorDiff <= minorDiff * 2) return false;
-
-  const horsePointSet = new Set(
-    getHorse21Points(matrix)
-      .filter(point => getLayer(point.r, point.c, center) <= 2)
-      .map(point => `${point.r}:${point.c}`)
-  );
-
-  if (r !== center) {
-    const rowStep = Math.sign(r - center);
-    for (let row = center + rowStep; row !== r + rowStep; row += rowStep) {
-      if (horsePointSet.has(`${row}:${c}`)) return true;
-    }
-  }
-
-  if (c !== center) {
-    const colStep = Math.sign(c - center);
-    for (let col = center + colStep; col !== c + colStep; col += colStep) {
-      if (horsePointSet.has(`${r}:${col}`)) return true;
-    }
-  }
-
-  return false;
-}
-
-/**
- * 下降模式下，如果主线触发了骑士线特例，则优先使用修正后的副线截取结果。
- */
-function getAxisHorseAdjustedCrossLine(matrix, crossLinePoints, r, c, clickedValue) {
-  const center = Math.floor(matrix.length / 2);
-  const L = getLayer(r, c, center);
-
-  if (!mainLineTouchesOuterHorse21(matrix, r, c)) return null;
-
-  const isHorizontalCross = crossLinePoints.every(point => point.r === center);
-  const isVerticalCross = crossLinePoints.every(point => point.c === center);
-
-  if (isHorizontalCross && r !== center) {
-    const startCol = center + Math.sign(r - center) * L;
-    const endCol = c;
-    const minCol = Math.min(startCol, endCol);
-    const maxCol = Math.max(startCol, endCol);
-
-    console.log(`[下降模式] 2:1骑士线修正 -> 横向副线区间:(${center},${minCol}) 到 (${center},${maxCol})`);
-
-    return crossLinePoints.filter(point =>
-      point.r === center &&
-      point.c >= minCol &&
-      point.c <= maxCol &&
-      point.value < clickedValue
-    );
-  }
-
-  if (isVerticalCross && c !== center) {
-    const startRow = center - Math.sign(c - center) * L;
-    const endRow = r;
-    const minRow = Math.min(startRow, endRow);
-    const maxRow = Math.max(startRow, endRow);
-
-    console.log(`[下降模式] 2:1骑士线修正 -> 纵向副线区间:(${minRow},${center}) 到 (${maxRow},${center})`);
-
-    return crossLinePoints.filter(point =>
-      point.c === center &&
-      point.r >= minRow &&
-      point.r <= maxRow &&
-      point.value < clickedValue
-    );
-  }
-
-  return null;
-}
-
-/**
- * 给下降模式计算副线的目标方向和目标端点。
- * 返回的是围绕中心点需要截取到哪一侧。
- */
-function getCrossLineDirectionTarget(matrix, crossLinePoints, r, c) {
-  const center = Math.floor(matrix.length / 2);
-  const originIdx = getLineCenterIndex(crossLinePoints);
-  const L = getLayer(r, c, center);
-  const isHorizontalCross = crossLinePoints.every(point => point.r === center);
-  const isVerticalCross = crossLinePoints.every(point => point.c === center);
-  const isMainDiagonalCross = crossLinePoints.every(point => point.r - point.c === 0);
-  const isAntiDiagonalCross = crossLinePoints.every(point => point.r + point.c === center * 2);
-
-  if (originIdx === -1 || L === 0) return null;
-
-  if (isHorizontalCross && r !== center) {
-    const targetCol = c === center
-      ? center + Math.sign(r - center) * L
-      : c;
-    const targetPoint = crossLinePoints.find(point =>
-      point.r === center &&
-      point.c === targetCol
-    );
-
-    return targetPoint
-      ? { targetIdx: crossLinePoints.indexOf(targetPoint), shouldExcludeCenter: false }
-      : null;
-  }
-
-  if (isVerticalCross && c !== center) {
-    const targetRow = center - Math.sign(c - center) * L;
-    const targetPoint = crossLinePoints.find(point =>
-      point.r === targetRow &&
-      point.c === center
-    );
-
-    return targetPoint
-      ? { targetIdx: crossLinePoints.indexOf(targetPoint), shouldExcludeCenter: false }
-      : null;
-  }
-
-  if ((isMainDiagonalCross || isAntiDiagonalCross) && c !== center) {
-    const rowDistance = Math.abs(r - center);
-    const colDistance = Math.abs(c - center);
-    const distance = Math.max(rowDistance, colDistance);
-    const isFlatHorseSide = distance > 2 && colDistance >= rowDistance * 2;
-    const direction = isFlatHorseSide
-      ? Math.sign(c - center)
-      : (isMainDiagonalCross ? Math.sign(r - center) : -Math.sign(c - center));
-    const shouldExcludeCenter = isMainDiagonalCross
-      ? rowDistance > colDistance
-      : colDistance > rowDistance;
-
-    return {
-      targetIdx: originIdx + direction * distance,
-      shouldExcludeCenter,
-    };
-  }
-
-  return null;
-}
-
-/**
- * 以中心点为基准，从副线上切出一段连续区间。
- */
-function sliceCrossLineFromCenter(crossLinePoints, targetIdx, shouldExcludeCenter) {
-  const originIdx = getLineCenterIndex(crossLinePoints);
-  const startIdx = Math.min(originIdx, targetIdx) + (shouldExcludeCenter && targetIdx > originIdx ? 1 : 0);
-  const endIdx = Math.max(originIdx, targetIdx) - (shouldExcludeCenter && targetIdx < originIdx ? 1 : 0);
-  const points = crossLinePoints.slice(
-    Math.max(0, startIdx),
-    Math.min(crossLinePoints.length, endIdx + 1)
-  );
-
-  return targetIdx >= originIdx ? points : points.reverse();
-}
-
-/**
- * 先把下降模式的副线边界算出来，供上升模式镜像复用。
- */
-function getCrossLineDownBounds(matrix, crossLinePoints, r, c) {
-  const center = Math.floor(matrix.length / 2);
-  const originIdx = getLineCenterIndex(crossLinePoints);
-  const L = getLayer(r, c, center);
-  const isHorizontalCross = crossLinePoints.every(point => point.r === center);
-  const isVerticalCross = crossLinePoints.every(point => point.c === center);
-  const directionTarget = getCrossLineDirectionTarget(matrix, crossLinePoints, r, c);
-
-  if (originIdx === -1 || L === 0) return null;
-
-  if (isHorizontalCross && r !== center) {
-    const startCol = center + Math.sign(r - center) * L;
-    const endCol = c;
-
-    return {
-      startIdx: Math.min(startCol, endCol),
-      endIdx: Math.max(startCol, endCol),
-      excludeOriginOnUp: c !== center,
-    };
-  }
-
-  if (isVerticalCross && c !== center) {
-    const startRow = center - Math.sign(c - center) * L;
-    const endRow = r;
-
-    return {
-      startIdx: Math.min(startRow, endRow),
-      endIdx: Math.max(startRow, endRow),
-      excludeOriginOnUp: r !== center,
-    };
-  }
-
-  if (directionTarget) {
-    return {
-      startIdx: Math.min(originIdx, directionTarget.targetIdx),
-      endIdx: Math.max(originIdx, directionTarget.targetIdx),
-      shouldExcludeCenter: directionTarget.shouldExcludeCenter,
-    };
-  }
-
-  return null;
-}
-
-/**
- * 根据下降模式的边界，推导上升模式下镜像后的副线区间。
- */
-function getCrossLineUpFromDownBounds(crossLinePoints, downBounds) {
-  const originIdx = getLineCenterIndex(crossLinePoints);
-  if (originIdx === -1 || !downBounds) return [];
-
-  const leftDistance = Math.max(0, originIdx - downBounds.startIdx);
-  const rightDistance = Math.max(0, downBounds.endIdx - originIdx);
-  const downSign = leftDistance > rightDistance ? -1 : 1;
-  const farDistance = Math.max(leftDistance, rightDistance);
-  const nearIdx = originIdx + downSign;
-  const mirrorFarIdx = originIdx - downSign * farDistance;
-  const startIdx = Math.max(0, Math.min(nearIdx, mirrorFarIdx));
-  const endIdx = Math.min(crossLinePoints.length - 1, Math.max(nearIdx, mirrorFarIdx));
-  const result = [];
-
-  for (let idx = startIdx; idx <= endIdx; idx++) {
-    if (!downBounds.excludeOriginOnUp || idx !== originIdx) {
-      result.push(crossLinePoints[idx]);
-    }
-  }
-
-  return result;
-}
-
-/**
- * 把点击点投影到当前副线上，便于处理无法直接落在线上的特殊情况。
- */
-function getCrossLineProjectionIndex(matrix, crossLinePoints, r, c) {
-  const center = Math.floor(matrix.length / 2);
-  const isHorizontalCross = crossLinePoints.every(point => point.r === center);
-  const isVerticalCross = crossLinePoints.every(point => point.c === center);
-  const isMainDiagonalCross = crossLinePoints.every(point => point.r - point.c === 0);
-  const isAntiDiagonalCross = crossLinePoints.every(point => point.r + point.c === center * 2);
-
-  let projectionPoint = null;
-
-  if (isHorizontalCross) {
-    projectionPoint = crossLinePoints.find(point => point.c === c);
-  } else if (isVerticalCross) {
-    projectionPoint = crossLinePoints.find(point => point.r === r);
-  } else if (isMainDiagonalCross || isAntiDiagonalCross) {
-    const clickIsOnCrossLine = crossLinePoints.some(point => point.r === r && point.c === c);
-    if (clickIsOnCrossLine) {
-      return getLineCenterIndex(crossLinePoints);
-    }
-
-    const targetLayer = getLayer(r, c, center);
-    projectionPoint = crossLinePoints.find(point =>
-      getLayer(point.r, point.c, center) === targetLayer &&
-      (point.r === r || point.c === c)
-    );
-  }
-
-  return projectionPoint ? crossLinePoints.indexOf(projectionPoint) : -1;
-}
-
-/**
- * 计算下降模式的趋势副线。
- * 核心规则是围绕中心向点击点所在方向截取，并保留比点击值更小的点。
- */
-export function getCrossLineDown(matrix, crossLinePoints, r, c) {
-  const size = matrix.length;
-  const center = Math.floor(size / 2);
-  const originIdx = getLineCenterIndex(crossLinePoints);
-  if (originIdx === -1) return [];
-
-  const L = Math.max(Math.abs(r - center), Math.abs(c - center));
-  if (L === 0) return [];
-
-  const candidates = crossLinePoints.filter(p =>
-    Math.max(Math.abs(p.r - center), Math.abs(p.c - center)) === L
-  );
-
-  if (candidates.length === 0) return [];
-
-  const clickedValue = matrix[r][c];
-  const isHorizontalCross = crossLinePoints.every(point => point.r === center);
-  const isVerticalCross = crossLinePoints.every(point => point.c === center);
-  const horseAdjustedCrossLine = getAxisHorseAdjustedCrossLine(matrix, crossLinePoints, r, c, clickedValue);
-
-  if (horseAdjustedCrossLine) {
-    return horseAdjustedCrossLine;
-  }
-
-  if (isHorizontalCross && r !== center) {
-    const startCol = center + Math.sign(r - center) * L;
-    const endCol = c;
-    const minCol = Math.min(startCol, endCol);
-    const maxCol = Math.max(startCol, endCol);
-
-    console.log(`[下降模式] 点击(${r},${c})[${clickedValue}] -> 横向副线区间:(${center},${minCol}) 到 (${center},${maxCol})`);
-
-    return crossLinePoints.filter(point =>
-      point.r === center &&
-      point.c >= minCol &&
-      point.c <= maxCol &&
-      point.value < clickedValue
-    );
-  }
-
-  if (isVerticalCross && c !== center) {
-    const startRow = center - Math.sign(c - center) * L;
-    const endRow = r;
-    const minRow = Math.min(startRow, endRow);
-    const maxRow = Math.max(startRow, endRow);
-
-    console.log(`[下降模式] 点击(${r},${c})[${clickedValue}] -> 纵向副线区间:(${minRow},${center}) 到 (${maxRow},${center})`);
-
-    return crossLinePoints.filter(point =>
-      point.c === center &&
-      point.r >= minRow &&
-      point.r <= maxRow &&
-      point.value < clickedValue
-    );
-  }
-
-  const directionTarget = getCrossLineDirectionTarget(matrix, crossLinePoints, r, c);
-
-  if (directionTarget) {
-    const orderedPoints = sliceCrossLineFromCenter(
-      crossLinePoints,
-      directionTarget.targetIdx,
-      directionTarget.shouldExcludeCenter
-    );
-
-    console.log(`[下降模式] 点击(${r},${c})[${clickedValue}] -> 副线方向: ${originIdx} 到 ${directionTarget.targetIdx}`);
-
-    return orderedPoints.filter(point => point.value < clickedValue);
-  }
-
-  let projPoint = candidates.find(p => (p.r === r || p.c === c) && p.value < clickedValue);
-
-  if (!projPoint) projPoint = candidates.find(p => p.r === r || p.c === c);
-  if (!projPoint) projPoint = candidates.find(p => p.value < clickedValue);
-  if (!projPoint) projPoint = candidates[0];
-
-  const projIdx = crossLinePoints.findIndex(x => x.r === projPoint.r && x.c === projPoint.c);
-  if (projIdx === -1) return [];
-
-  let startIdx = Math.min(projIdx, originIdx);
-  let endIdx = Math.max(projIdx, originIdx);
-  const isBeforeCenter = (r < center || c < center);
-
-  if (isBeforeCenter) {
-    if (startIdx === originIdx) startIdx++;
-    if (endIdx === originIdx) endIdx--;
-  }
-
-  console.log(`[下降模式] 点击(${r},${c})[${clickedValue}] -> 映射副坐标:(${projPoint.r},${projPoint.c})[${projPoint.value}]`);
-
-  return crossLinePoints.slice(
-    Math.max(0, startIdx),
-    Math.min(crossLinePoints.length, endIdx + 1)
-  );
-}
-
-/**
- * 计算上升模式的趋势主线。
- * 从点击点沿主线朝远离中心的一侧截取，直到碰到第一个更大的点。
- */
-export function getMainLineUp(matrix, mainLine, clickedValue) {
-  const center = Math.floor(matrix.length / 2);
-  const clickIndex = mainLine.findIndex(x => x.value === clickedValue);
-
-  if (clickIndex === -1) return [];
-
-  const originIndex = mainLine.reduce((bestIndex, point, index) => {
-    const bestPoint = mainLine[bestIndex];
-    const pointLayer = getLayer(point.r, point.c, center);
-    const bestLayer = getLayer(bestPoint.r, bestPoint.c, center);
-
-    if (pointLayer !== bestLayer) {
-      return pointLayer < bestLayer ? index : bestIndex;
-    }
-
-    return Math.abs(index - clickIndex) > Math.abs(bestIndex - clickIndex)
-      ? index
-      : bestIndex;
-  }, 0);
-
-  const step = clickIndex < originIndex ? 1 : -1;
-  const result = [];
-
-  for (
-    let index = clickIndex + step;
-    index >= 0 && index < mainLine.length;
-    index += step
-  ) {
-    const point = mainLine[index];
-    result.push(point);
-
-    if (point.value > clickedValue) {
-      break;
-    }
-  }
-
-  return result;
-}
-
-/**
- * 计算上升模式的趋势副线。
- * 方向完全依赖矩阵坐标关系，遇到横线、竖线和对角线会分别按对应规则截取。
- */
-export function getCrossLineUp(matrix, crossLinePoints, r, c) {
-  if (!Array.isArray(crossLinePoints) || crossLinePoints.length === 0) return [];
-
-  const originIndex = getLineCenterIndex(crossLinePoints);
-  if (originIndex === -1) return [];
-
-  const center = Math.floor(matrix.length / 2);
-  const L = getLayer(r, c, center);
-  const isHorizontalCross = crossLinePoints.every(point => point.r === center);
-  const isVerticalCross = crossLinePoints.every(point => point.c === center);
-  const isMainDiagonalCross = crossLinePoints.every(point => point.r - point.c === 0);
-  const isAntiDiagonalCross = crossLinePoints.every(point => point.r + point.c === center * 2);
-
-  if ((isMainDiagonalCross || isAntiDiagonalCross) && c !== center) {
-    const rowDistance = Math.abs(r - center);
-    const colDistance = Math.abs(c - center);
-    const clickedValue = matrix[r][c];
-    const direction = Math.sign(c - center);
-    let targetIdx = originIndex + direction * L;
-
-    targetIdx = Math.max(0, Math.min(crossLinePoints.length - 1, targetIdx));
-
-    while (
-      targetIdx + direction >= 0 &&
-      targetIdx + direction < crossLinePoints.length &&
-      crossLinePoints[targetIdx].value <= clickedValue
-    ) {
-      targetIdx += direction;
-    }
-
-    const shouldExcludeCenter = isMainDiagonalCross
-      ? colDistance > rowDistance
-      : rowDistance > colDistance;
-    const startIdx = Math.min(originIndex, targetIdx) + (shouldExcludeCenter && targetIdx > originIndex ? 1 : 0);
-    const endIdx = Math.max(originIndex, targetIdx) - (shouldExcludeCenter && targetIdx < originIndex ? 1 : 0);
-
-    return crossLinePoints.slice(
-      Math.max(0, startIdx),
-      Math.min(crossLinePoints.length, endIdx + 1)
-    );
-  }
-
-  if (isHorizontalCross && r !== center) {
-    const clickedValue = matrix[r][c];
-    const nearIdx = c;
-    const direction = -Math.sign(r - center);
-    let targetIdx = nearIdx;
-
-    targetIdx = Math.max(0, Math.min(crossLinePoints.length - 1, targetIdx));
-
-    while (
-      targetIdx + direction >= 0 &&
-      targetIdx + direction < crossLinePoints.length &&
-      crossLinePoints[targetIdx].value <= clickedValue
-    ) {
-      targetIdx += direction;
-    }
-
-    const startIdx = Math.min(nearIdx, targetIdx);
-    const endIdx = Math.max(nearIdx, targetIdx);
-
-    return crossLinePoints.slice(
-      Math.max(0, startIdx),
-      Math.min(crossLinePoints.length, endIdx + 1)
-    );
-  }
-
-  if (isVerticalCross && c !== center) {
-    const clickedValue = matrix[r][c];
-    const nearIdx = r;
-    const direction = Math.sign(c - center);
-    let targetIdx = nearIdx;
-
-    targetIdx = Math.max(0, Math.min(crossLinePoints.length - 1, targetIdx));
-
-    while (
-      targetIdx + direction >= 0 &&
-      targetIdx + direction < crossLinePoints.length &&
-      crossLinePoints[targetIdx].value <= clickedValue
-    ) {
-      targetIdx += direction;
-    }
-
-    const startIdx = Math.min(nearIdx, targetIdx);
-    const endIdx = Math.max(nearIdx, targetIdx);
-
-    return crossLinePoints.slice(
-      Math.max(0, startIdx),
-      Math.min(crossLinePoints.length, endIdx + 1)
-    );
-  }
-
-  const downBounds = getCrossLineDownBounds(matrix, crossLinePoints, r, c);
-  const projectionIdx = getCrossLineProjectionIndex(matrix, crossLinePoints, r, c);
-
-  if (projectionIdx !== -1 && downBounds) {
-    const leftDistance = Math.max(0, originIndex - downBounds.startIdx);
-    const rightDistance = Math.max(0, downBounds.endIdx - originIndex);
-    const downSign = leftDistance > rightDistance ? -1 : 1;
-    const farDistance = Math.max(leftDistance, rightDistance);
-    const targetIdx = originIndex - downSign * farDistance;
-    const startIdx = Math.max(0, Math.min(projectionIdx, targetIdx));
-    const endIdx = Math.min(crossLinePoints.length - 1, Math.max(projectionIdx, targetIdx));
-
-    return crossLinePoints.slice(startIdx, endIdx + 1);
-  }
-
-  const orderedPoints = getCrossLineUpFromDownBounds(crossLinePoints, downBounds);
-
-  console.log(`[上升模式] 点击(${r},${c})[${matrix[r][c]}] -> 反向副线区间`);
-
-  return orderedPoints;
-}
-
-/**
- * 把一组数值重新映射回矩阵坐标点。
- */
-export function getPointsFromMatrix(matrix, values) {
-  const result = [];
-  const size = matrix.length;
-
-  values.forEach(val => {
-    let found = false;
-    for (let r = 0; r < size; r++) {
-      for (let c = 0; c < size; c++) {
-        if (matrix[r][c] === val) {
-          result.push({ r, c, value: val });
-          found = true;
-          break;
-        }
-      }
-      if (found) break;
-    }
-  });
-
-  return result;
-}
-
-/**
- * 把数值数组转换成带坐标的点数组，方便前端直接高亮。
- */
 export function convertToPointArray(matrix, valueArray) {
-  const size = matrix.length;
-  const valToPos = {};
-
-  for (let r = 0; r < size; r++) {
-    for (let c = 0; c < size; c++) {
-      valToPos[matrix[r][c]] = { r, c };
-    }
-  }
-
-  return valueArray.map(v => {
-    const pos = valToPos[v];
-    return pos ? { r: pos.r, c: pos.c, value: v } : null;
-  }).filter(item => item !== null);
+  return valuesToPoints(matrix, valueArray);
 }
 
-/**
- * 点击矩阵后的统一入口。
- * 返回主线、副线以及最终用于高亮的趋势点集合。
- */
-export function calculateClickTrend(matrix, r, c, trendDirection) {
-  const clickedValue = matrix[r][c];
-  const { mainLine, crossLine } = getCrossLines(matrix, clickedValue, r, c);
-  const mainLinePoints = convertToPointArray(matrix, mainLine.map(x => x.value || x));
-  const crossLinePoints = convertToPointArray(matrix, crossLine.map(x => x.value || x));
-  let trendMain = [];
-  let trendCross = [];
+export function getPointsFromMatrix(matrix, values) {
+  return valuesToPoints(matrix, values);
+}
 
-  if (trendDirection === "down") {
-    trendMain = mainLine.filter(x => x.value < clickedValue);
-    trendCross = getCrossLineDown(matrix, crossLinePoints, r, c);
+export function getMainDiagonal(matrix, r, c) {
+  return matrix.flatMap((row, rowIndex) =>
+    row.map((value, colIndex) => ({ r: rowIndex, c: colIndex, value }))
+  ).filter(point => point.r - point.c === r - c);
+}
+
+export function getCenterAntiDiagonal(matrix) {
+  const center = Math.floor(matrix.length / 2);
+  return matrix.flatMap((row, rowIndex) =>
+    row.map((value, colIndex) => ({ r: rowIndex, c: colIndex, value }))
+  ).filter(point => point.r + point.c === center * 2);
+}
+
+export function getMainDiagonalDown(mainLine, clickedValue) {
+  return mainLine.filter(item => item.value < clickedValue);
+}
+
+export function getAntiDiagonalDown(antiLine, clickedValue) {
+  return antiLine.filter(item => item.value < clickedValue);
+}
+
+function valuesToPoints(matrix, values) {
+  const index = new Map();
+  for (let r = 0; r < matrix.length; r += 1) {
+    for (let c = 0; c < matrix[r].length; c += 1) {
+      index.set(Number(matrix[r][c]), { r, c, value: matrix[r][c] });
+    }
+  }
+  return dedupe(values).map(value => index.get(Number(value))).filter(Boolean);
+}
+
+function buildGannSpiral(max) {
+  const numToPos = new Map();
+  const posToNum = new Map();
+  let row = 0;
+  let col = 0;
+  let n = 1;
+  setPoint(n, row, col);
+
+  const dirs = [[0, -1], [-1, 0], [0, 1], [1, 0]];
+  let stepLen = 1;
+  let dirIndex = 0;
+
+  while (n < max) {
+    for (let repeat = 0; repeat < 2 && n < max; repeat += 1) {
+      const [dr, dc] = dirs[dirIndex % 4];
+      for (let i = 0; i < stepLen && n < max; i += 1) {
+        row += dr;
+        col += dc;
+        n += 1;
+        setPoint(n, row, col);
+      }
+      dirIndex += 1;
+    }
+    stepLen += 1;
   }
 
-  if (trendDirection === "up") {
-    trendMain = getMainLineUp(matrix, mainLine, clickedValue);
-    trendCross = getCrossLineUp(matrix, crossLinePoints, r, c);
+  function setPoint(value, r, c) {
+    numToPos.set(value, { row: r, col: c });
+    posToNum.set(`${r},${c}`, value);
   }
+
+  return { numToPos, posToNum };
+}
+
+function calcHighlights(clickedValue, trend, gridRadius) {
+  const maxNumber = (gridRadius * 2 + 1) ** 2;
+  const { numToPos, posToNum } = buildGannSpiral(maxNumber);
+  const point = numToPos.get(clickedValue);
+  const gridSize = gridRadius * 2 + 1;
+  const center = Math.floor(gridSize / 2);
+
+  if (!point) {
+    return {
+      error: `Number ${clickedValue} is outside the current matrix.`,
+      clickedValue,
+      trend,
+      gridRadius,
+      maxNumber,
+      mainHighlight: [],
+      subHighlight: [],
+      numToPos,
+      posToNum,
+    };
+  }
+
+  const absPoint = relToAbs(point, center);
+  const sector = getSector(absPoint, gridSize);
+  const type = getPointType(point);
+  const distance = getAxisDistance(absPoint, center, sector);
+  const trendMode = trend === "up" ? 1 : 0;
+  const ctx = {
+    clickedValue,
+    trend,
+    trendMode,
+    gridRadius,
+    maxNumber,
+    gridSize,
+    center,
+    posToNum,
+    line1: [],
+    line2: [],
+    drawCalls: [],
+    distance,
+    debug: {},
+  };
+
+  if (type === 2) renderType2(ctx, absPoint, sector, trendMode);
+  else renderDiagonal(ctx, absPoint, sector, trendMode);
 
   return {
     clickedValue,
-    mainLine,
-    crossLine,
-    mainLinePoints,
-    crossLinePoints,
-    trendMain,
-    trendCross,
-    trendCells: [...trendMain, ...trendCross],
+    trend,
+    point,
+    absPoint,
+    type,
+    sector,
+    distance,
+    trendMode,
+    gridRadius,
+    maxNumber,
+    gridSize,
+    center,
+    mainHighlight: dedupe(ctx.line1),
+    subHighlight: normalizeSegment(dedupe(ctx.line2), point, trend),
+    drawCalls: ctx.drawCalls,
+    debug: ctx.debug,
+    numToPos,
+    posToNum,
   };
+}
+
+function getValue(posToNum, row, col) {
+  return posToNum.get(`${row},${col}`);
+}
+
+function trunc(n) {
+  return n < 0 ? Math.ceil(n) : Math.floor(n);
+}
+
+function dedupe(values) {
+  const seen = new Set();
+  return values.filter(value => {
+    if (seen.has(value)) return false;
+    seen.add(value);
+    return true;
+  });
+}
+
+function ptInRect(rect, p) {
+  return p.x >= rect.left && p.x < rect.right && p.y >= rect.top && p.y < rect.bottom;
+}
+
+function calcY(line, x) {
+  return trunc(x * line.k + line.b);
+}
+
+function classifyPointByLine(line, p) {
+  const diff = trunc(p.x * line.k + line.b - p.y);
+  if (diff === 0) return 0;
+  return diff >= 0 ? 2 : 1;
+}
+
+function relToAbs(point, center) {
+  return { x: point.col + center, y: point.row + center };
+}
+
+function absToRel(x, y, center) {
+  return { row: y - center, col: x - center };
+}
+
+function absValue(ctx, x, y) {
+  const rel = absToRel(x, y, ctx.center);
+  return getValue(ctx.posToNum, rel.row, rel.col);
+}
+
+function getPointType(point) {
+  const x = point.col;
+  const y = point.row;
+  if (x === 0 || y === 0) return 2;
+
+  const dx = Math.abs(x);
+  const dy = Math.abs(y);
+  if (x < 0 && y > 0 && ((dx === 3 && dy === 5) || (dx === 4 && dy === 7))) return 1;
+
+  const limit = dx > 8 ? dx - 4 : CLASS_TABLE[dx];
+  if (dy <= limit) return 2;
+  if (dy < 9) return dx <= CLASS_TABLE[dy] ? 2 : 1;
+  return dx <= dy - 4 ? 2 : 1;
+}
+
+function getSector(absPoint, gridSize) {
+  const x = absPoint.x;
+  const y = absPoint.y;
+  const rect = { left: x * 2, top: y * 2, right: x * 2 + 2, bottom: y * 2 + 2 };
+  const testPoint = { x: x * 2 + 1, y: y * 2 + 1 };
+  const lineC0 = { k: -1, b: gridSize * 2 };
+  const lineD0 = { k: 1, b: 0 };
+
+  if (ptInRect(rect, { x: testPoint.x, y: calcY(lineC0, testPoint.x) })) return 7;
+  if (ptInRect(rect, { x: testPoint.x, y: calcY(lineD0, testPoint.x) })) return 6;
+
+  const signC0 = classifyPointByLine(lineC0, testPoint);
+  const signD0 = classifyPointByLine(lineD0, testPoint);
+  if (signC0 === 2) return signD0 !== 1 ? 2 : 1;
+  return signD0 !== 2 ? 4 : 3;
+}
+
+function getAxisDistance(absPoint, center, sector) {
+  const dx = Math.abs(absPoint.x - center);
+  const dy = Math.abs(absPoint.y - center);
+  if ([1, 3, 6, 7].includes(sector)) return dx;
+  if ([2, 4].includes(sector)) return dy;
+  return 0;
+}
+
+function getMajorMinor(absPoint, center) {
+  const dx = Math.abs(absPoint.x - center);
+  const dy = Math.abs(absPoint.y - center);
+  return { major: Math.max(dx, dy), minor: Math.min(dx, dy) };
+}
+
+function record(ctx, x, y, segment, color) {
+  const value = absValue(ctx, x, y);
+  if (!value) return false;
+
+  ctx.drawCalls.push({ value, x, y, segment, color });
+  if (value === ctx.clickedValue) return true;
+  if (segment === "line1") ctx.line1.push(value);
+  if (segment === "line2") ctx.line2.push(value);
+  return true;
+}
+
+function normalizeSegment(values, point, trend) {
+  if (trend === "down" && point.row < 0) return values.slice().reverse();
+  return values.slice();
+}
+
+function renderType2(ctx, absPoint, sector, trendMode) {
+  const up = trendMode === 1;
+  let x = absPoint.x;
+  let y = absPoint.y;
+  const d = ctx.distance;
+  const c = ctx.center;
+  const N = ctx.gridSize;
+  const currentColor = up ? "0x99ff33" : "0x9999ff";
+  const lineColor = up ? "0x9999ff" : "0x99ff33";
+
+  switch (sector) {
+    case 1: {
+      const origY = y;
+      const targetX = x + d;
+      record(ctx, x, y, "current", currentColor);
+      if (up) {
+        for (let i = 0; i < d * 2; i += 1) record(ctx, ++x, y, "line1", lineColor);
+        y = origY - 1;
+        x = targetX;
+        for (let i = 0, count = origY - c + d; i < count && y >= 0; i += 1, y -= 1) record(ctx, x, y, "line2", lineColor);
+      } else {
+        for (let i = 0; i < Math.max(0, d * 2 - 1); i += 1) record(ctx, ++x, y, "line1", lineColor);
+        y = origY + 1;
+        x = targetX;
+        for (let i = 0, count = c - origY - 1 + d; i < count && y <= N; i += 1, y += 1) record(ctx, x, y, "line2", lineColor);
+      }
+      break;
+    }
+    case 2: {
+      const origX = x;
+      const targetY = y + d;
+      record(ctx, x, y, "current", currentColor);
+      if (up) {
+        for (let i = 0; i < d * 2; i += 1) record(ctx, x, ++y, "line1", lineColor);
+        x = origX;
+        y = targetY;
+        for (let i = 0, count = d - origX + 1 + c; i < count && x < N; i += 1, x += 1) record(ctx, x, y, "line2", lineColor);
+      } else {
+        for (let i = 0; i < Math.max(0, d * 2 - 1); i += 1) record(ctx, x, ++y, "line1", lineColor);
+        x = origX;
+        y = targetY;
+        for (let i = 0, count = origX - c + 1 + d; i < count; i += 1, x -= 1) record(ctx, x, y, "line2", lineColor);
+      }
+      break;
+    }
+    case 3: {
+      const targetX = x - d;
+      const origY = y;
+      record(ctx, x, y, "current", currentColor);
+      if (up) {
+        for (let i = 0; i < d * 2 + 1; i += 1) {
+          x -= 1;
+          if (x < 0) break;
+          record(ctx, x, y, "line1", lineColor);
+        }
+        x = targetX;
+        y = origY;
+        for (let i = 0, count = c - origY + 1 + d; i < count; i += 1, y += 1) record(ctx, x, y, "line2", lineColor);
+      } else {
+        for (let i = 0; i < d * 2; i += 1) record(ctx, --x, y, "line1", lineColor);
+        x = targetX;
+        y = origY;
+        for (let i = 0, count = origY - c + 1 + d; i < count; i += 1, y -= 1) record(ctx, x, y, "line2", lineColor);
+      }
+      break;
+    }
+    case 4: {
+      const targetY = y - d;
+      const origX = x;
+      record(ctx, x, y, "current", currentColor);
+      if (up) {
+        for (let i = 0; i < d * 2 + 1; i += 1) {
+          y -= 1;
+          if (y < 0) break;
+          record(ctx, x, y, "line1", lineColor);
+        }
+        y = targetY;
+        x = origX - 1;
+        for (let i = 0, count = origX - c + 1 + d; i < count && x >= 0; i += 1, x -= 1) record(ctx, x, y, "line2", lineColor);
+      } else {
+        for (let i = 0; i < d * 2; i += 1) record(ctx, x, --y, "line1", lineColor);
+        x = origX + 1;
+        y = targetY;
+        for (let i = 0, count = c + d - origX; i < count && x <= N; i += 1, x += 1) record(ctx, x, y, "line2", lineColor);
+      }
+      break;
+    }
+    default:
+      record(ctx, x, y, "current", currentColor);
+  }
+}
+
+function renderDiagLabel14614(ctx, absPoint, sector, trendMode, major, minor) {
+  const up = trendMode === 1;
+  let { x, y } = absPoint;
+  let d = ctx.distance;
+  const c = ctx.center;
+  const N = ctx.gridSize;
+  const lineColor = up ? "0x9999ff" : "0x99ff33";
+  record(ctx, x, y, "current", up ? "0x99ff33" : "0x9999ff");
+
+  if (up) {
+    for (let i = 0, count = major + minor + (sector !== 1 ? 1 : 0); i < count; i += 1) {
+      x += 1;
+      y -= 1;
+      if (N <= x || y < 0) break;
+      record(ctx, x, y, "line1", lineColor);
+    }
+    x = c;
+    y = c;
+    if (sector === 4) {
+      const diff = major - minor;
+      x = c + diff;
+      y = c + diff;
+      d += diff + 1;
+    } else if (sector !== 1) d += 1;
+    for (let i = 0; i < d; i += 1) record(ctx, --x, --y, "line2", lineColor);
+  } else {
+    for (let i = 0, count = major - 1 + minor + (sector !== 1 ? 1 : 0); i < count; i += 1) {
+      x += 1;
+      y -= 1;
+      record(ctx, x, y, "line1", lineColor);
+    }
+    x = c;
+    y = c;
+    if (sector === 1) {
+      const diff = major - minor;
+      x = c - diff;
+      y = c - diff;
+      d += diff - 1;
+    }
+    for (let i = 0; i < d; i += 1) record(ctx, ++x, ++y, "line2", lineColor);
+  }
+}
+
+function renderDiagLabel14ba7(ctx, absPoint, sector, trendMode, major, minor) {
+  const up = trendMode === 1;
+  let { x, y } = absPoint;
+  let d = ctx.distance;
+  const c = ctx.center;
+  const lineColor = up ? "0x9999ff" : "0x99ff33";
+  record(ctx, x, y, "current", up ? "0x99ff33" : "0x9999ff");
+  for (let i = 0, count = up ? major + 1 + minor : major + minor; i < count; i += 1) record(ctx, --x, --y, "line1", lineColor);
+
+  x = c;
+  y = c;
+  if (up && sector === 3) {
+    const diff = major - minor;
+    x = c + diff;
+    y = c - diff;
+    d += diff;
+  }
+  if (!up && sector === 4) {
+    const diff = major - minor;
+    x = c - diff;
+    y = c + diff;
+    d += diff;
+  }
+  for (let i = 0; i < d; i += 1) {
+    if (up) record(ctx, --x, ++y, "line2", lineColor);
+    else record(ctx, ++x, --y, "line2", lineColor);
+  }
+}
+
+function renderDiagLabel149e7(ctx, absPoint, sector, trendMode, major, minor) {
+  const up = trendMode === 1;
+  let { x, y } = absPoint;
+  let d = ctx.distance;
+  const c = ctx.center;
+  const lineColor = up ? "0x9999ff" : "0x99ff33";
+  record(ctx, x, y, "current", up ? "0x99ff33" : "0x9999ff");
+
+  for (let i = 0, count = (up ? major + minor : major - 1 + minor) + (sector === 2 ? 1 : 0); i < count; i += 1) {
+    record(ctx, --x, ++y, "line1", lineColor);
+  }
+  x = c;
+  y = c;
+  if (up && sector === 2) {
+    const diff = major - minor;
+    x = c - diff;
+    y = c - diff;
+    d += diff;
+  }
+  if (!up && sector === 3) {
+    const diff = major - minor;
+    x = c + diff;
+    y = c + diff;
+    d += diff;
+  }
+  for (let i = 0; i < d; i += 1) {
+    if (up) record(ctx, ++x, ++y, "line2", lineColor);
+    else record(ctx, --x, --y, "line2", lineColor);
+  }
+}
+
+function renderDiagLabel14821(ctx, absPoint, sector, trendMode, major, minor) {
+  const up = trendMode === 1;
+  let { x, y } = absPoint;
+  let d = ctx.distance;
+  const c = ctx.center;
+  const lineColor = up ? "0x9999ff" : "0x99ff33";
+  record(ctx, x, y, "current", up ? "0x99ff33" : "0x9999ff");
+
+  for (let i = 0, count = up ? major + minor : major - 1 + minor; i < count; i += 1) record(ctx, ++x, ++y, "line1", lineColor);
+  x = c;
+  y = c;
+  if (up && sector === 1) {
+    const diff = major - minor;
+    x = c - diff;
+    y = c + diff;
+    d += diff;
+    for (let i = 0; i < d; i += 1) record(ctx, ++x, --y, "line2", lineColor);
+    return;
+  }
+  if (!up && sector === 2) {
+    const diff = major - minor;
+    x = c + diff;
+    y = c - diff;
+    d += diff;
+  }
+  if (!up) {
+    while ((d -= 1) !== 0) record(ctx, --x, ++y, "line2", lineColor);
+    return;
+  }
+  for (let i = 0; i < d; i += 1) record(ctx, ++x, --y, "line2", lineColor);
+}
+
+function renderDiagonal(ctx, absPoint, sector, trendMode) {
+  const { major, minor } = getMajorMinor(absPoint, ctx.center);
+  const { x, y } = absPoint;
+  const c = ctx.center;
+  ctx.debug.diagonal = { major, minor };
+
+  if (sector === 1) {
+    if (c < y) return renderDiagLabel14614(ctx, absPoint, sector, trendMode, major, minor);
+    if (y < c) return renderDiagLabel14821(ctx, absPoint, sector, trendMode, major, minor);
+  }
+  if (sector === 4) {
+    if (x < c) return renderDiagLabel14614(ctx, absPoint, sector, trendMode, major, minor);
+    if (c < x) return renderDiagLabel14ba7(ctx, absPoint, sector, trendMode, major, minor);
+  }
+  if (sector === 7) {
+    if (x < c) return renderDiagLabel14614(ctx, absPoint, sector, trendMode, major, minor);
+    if (c < x) return renderDiagLabel149e7(ctx, absPoint, sector, trendMode, major, minor);
+  }
+  if (sector === 2) {
+    if (c <= x) return renderDiagLabel149e7(ctx, absPoint, sector, trendMode, major, minor);
+    return renderDiagLabel14821(ctx, absPoint, sector, trendMode, major, minor);
+  }
+  if (sector === 6) {
+    if (x < c) return renderDiagLabel14821(ctx, absPoint, sector, trendMode, major, minor);
+    if (c < x) return renderDiagLabel14ba7(ctx, absPoint, sector, trendMode, major, minor);
+  }
+  if (sector === 3) {
+    if (c <= y) return renderDiagLabel14ba7(ctx, absPoint, sector, trendMode, major, minor);
+    return renderDiagLabel149e7(ctx, absPoint, sector, trendMode, major, minor);
+  }
+  return undefined;
+}
+
+function clipLineThroughCenter(slope, center, size) {
+  if (!size) return null;
+  if (slope === Infinity) return { x1: center, y1: 0, x2: center, y2: size };
+  if (slope === 0) return { x1: 0, y1: center, x2: size, y2: center };
+
+  const points = [];
+  const pushPoint = (x, y) => {
+    const eps = 1e-7;
+    if (x < -eps || x > size + eps || y < -eps || y > size + eps) return;
+    const px = Math.min(size, Math.max(0, x));
+    const py = Math.min(size, Math.max(0, y));
+    const key = `${px.toFixed(4)},${py.toFixed(4)}`;
+    if (!points.some(p => p.key === key)) points.push({ x: px, y: py, key });
+  };
+
+  pushPoint(0, center + slope * (0 - center));
+  pushPoint(size, center + slope * (size - center));
+  pushPoint(center + (0 - center) / slope, 0);
+  pushPoint(center + (size - center) / slope, size);
+  if (points.length < 2) return null;
+
+  let best = null;
+  for (let i = 0; i < points.length; i += 1) {
+    for (let j = i + 1; j < points.length; j += 1) {
+      const dist = (points[i].x - points[j].x) ** 2 + (points[i].y - points[j].y) ** 2;
+      if (!best || dist > best.dist) best = { a: points[i], b: points[j], dist };
+    }
+  }
+
+  return best ? { x1: best.a.x, y1: best.a.y, x2: best.b.x, y2: best.b.y } : null;
 }

@@ -1,307 +1,364 @@
 <template>
   <main class="board-panel">
     <section class="trend-panel">
-      <div class="section-heading">
-        <h2>趋势模式</h2>
-        <p>切换点击后的分析方向与高亮颜色。</p>
+      <div class="section-heading trend-heading">
+        <div>
+          <h2>趋势模式</h2>
+          <p>点击格子后，新算法会输出主线与副线；画布使用固定网格与原生滚动。</p>
+        </div>
+        <div v-if="form.modeEnabled" class="trend-switcher">
+          <button type="button" class="trend-button up" :class="{ active: form.trendDirection === 'up' }" @click="form.trendDirection = 'up'">
+            上升
+          </button>
+          <button type="button" class="trend-button down" :class="{ active: form.trendDirection === 'down' }" @click="form.trendDirection = 'down'">
+            下降
+          </button>
+        </div>
       </div>
 
-      <div class="trend-layout">
-        <div class="toggle-card mode-card">
-          <div>
-            <strong>启用点击计算</strong>
-            <p>关闭后矩阵只展示，不计算趋势主副线。</p>
-          </div>
-          <el-switch v-model="form.modeEnabled" />
+      <div class="point-lists">
+        <div class="point-list">
+          <strong>主线</strong>
+          <span v-if="!mainPointValues.length" class="point-empty">未生成</span>
+          <span v-else class="tag-row">
+            <el-tag v-for="value in mainPointValues" :key="`main-${value}`" effect="plain" size="small">
+              {{ value }}
+            </el-tag>
+          </span>
         </div>
-
-        <div v-if="form.modeEnabled" class="trend-switcher">
-          <button
-            type="button"
-            class="trend-button"
-            :class="{ active: form.trendDirection === 'up', up: true }"
-            @click="form.trendDirection = 'up'"
-          >
-            ↑ 上升
-          </button>
-          <button
-            type="button"
-            class="trend-button"
-            :class="{ active: form.trendDirection === 'down', down: true }"
-            @click="form.trendDirection = 'down'"
-          >
-            ↓ 下降
-          </button>
-        </div>
-
-        <div class="legend-grid">
-          <div class="legend-item">
-            <span class="legend-dot selected-dot"></span>
-            <span>选中点</span>
-          </div>
-          <div class="legend-item">
-            <span class="legend-dot trend-dot"></span>
-            <span>趋势点</span>
-          </div>
-          <div class="legend-item">
-            <span class="legend-dot search-dot"></span>
-            <span>搜索命中</span>
-          </div>
+        <div class="point-list">
+          <strong>副线</strong>
+          <span v-if="!crossPointValues.length" class="point-empty">未生成</span>
+          <span v-else class="tag-row">
+            <el-tag v-for="value in crossPointValues" :key="`cross-${value}`" effect="plain" size="small">
+              {{ value }}
+            </el-tag>
+          </span>
         </div>
       </div>
     </section>
 
     <section class="matrix-panel">
-      <div class="matrix-scroll">
-        <div class="matrix-wrapper" v-if="matrix.length">
-          <svg class="matrix-overlay" :width="matrix.length * cellSize" :height="matrix.length * cellSize">
-            <line
-              v-if="form.showCross"
-              :x1="centerPx"
-              y1="0"
-              :x2="centerPx"
-              :y2="totalSize"
-              stroke="#2d6cdf"
-              stroke-width="2"
-              :stroke-opacity="form.lineOpacity / 100"
-            />
-            <line
-              v-if="form.showCross"
-              x1="0"
-              :y1="centerPx"
-              :x2="totalSize"
-              :y2="centerPx"
-              stroke="#2d6cdf"
-              stroke-width="2"
-              :stroke-opacity="form.lineOpacity / 100"
-            />
-
-            <line
-              v-if="form.showDiagonal"
-              x1="0"
-              y1="0"
-              :x2="totalSize"
-              :y2="totalSize"
-              stroke="#d9485f"
-              stroke-width="2"
-              :stroke-opacity="form.lineOpacity / 100"
-            />
-            <line
-              v-if="form.showDiagonal"
-              :x1="totalSize"
-              y1="0"
-              x2="0"
-              :y2="totalSize"
-              stroke="#d9485f"
-              stroke-width="2"
-              :stroke-opacity="form.lineOpacity / 100"
-            />
-
-            <g v-if="form.showHorseLine && horseLineCoords" :opacity="form.lineOpacity / 100">
-              <line
-                :x1="horseLineCoords.x1"
-                :y1="horseLineCoords.y1"
-                :x2="horseLineCoords.x2"
-                :y2="horseLineCoords.y2"
-                stroke="#7f56d9"
-                stroke-width="2"
-                stroke-dasharray="8,4"
-              />
-              <line
-                :x1="totalSize - horseLineCoords.x1"
-                :y1="horseLineCoords.y1"
-                :x2="totalSize - horseLineCoords.x2"
-                :y2="horseLineCoords.y2"
-                stroke="#7f56d9"
-                stroke-width="2"
-                stroke-dasharray="8,4"
-              />
-            </g>
-
-            <g v-if="form.showHorseLineFlat && horseLineFlatCoords" :opacity="form.lineOpacity / 100">
-              <line
-                :x1="horseLineFlatCoords.x1"
-                :y1="horseLineFlatCoords.y1"
-                :x2="horseLineFlatCoords.x2"
-                :y2="horseLineFlatCoords.y2"
-                stroke="#159f7b"
-                stroke-width="2"
-                stroke-dasharray="8,4"
-              />
-              <line
-                :x1="horseLineFlatCoords.x1"
-                :y1="totalSize - horseLineFlatCoords.y1"
-                :x2="horseLineFlatCoords.x2"
-                :y2="totalSize - horseLineFlatCoords.y2"
-                stroke="#159f7b"
-                stroke-width="2"
-                stroke-dasharray="8,4"
-              />
-            </g>
-          </svg>
-
-          <div class="matrix">
-            <div v-for="(row, rIndex) in matrix" :key="rIndex" class="row">
-              <div
-                v-for="(cell, cIndex) in row"
-                :key="cIndex"
-                class="cell"
-                :class="getCellClass(rIndex, cIndex)"
-                :style="getCellStyle(rIndex, cIndex)"
-                @click="handleCellClick(rIndex, cIndex)"
-              >
-                <div class="cell-value">{{ cell }}</div>
-                <div v-if="form.showCoords" class="cell-coord">{{ `${rIndex}:${cIndex}` }}</div>
-              </div>
-            </div>
-          </div>
-        </div>
+      <div ref="viewportRef" class="matrix-viewport" @wheel="handleWheel">
+        <canvas ref="canvasRef" class="matrix-canvas" @click="handleCanvasClick"></canvas>
       </div>
     </section>
   </main>
 </template>
 
 <script setup>
-defineProps({
-  matrix: {
-    type: Array,
-    required: true,
-  },
-  form: {
-    type: Object,
-    required: true,
-  },
-  cellSize: {
-    type: Number,
-    required: true,
-  },
-  centerPx: {
-    type: Number,
-    required: true,
-  },
-  totalSize: {
-    type: Number,
-    required: true,
-  },
-  horseLineCoords: {
-    type: Object,
-    default: null,
-  },
-  horseLineFlatCoords: {
-    type: Object,
-    default: null,
-  },
-  mid: {
-    type: Number,
-    required: true,
-  },
-  modeEnabled: {
-    type: Boolean,
-    required: true,
-  },
-  trendPalette: {
-    type: Object,
-    required: true,
-  },
-  getCellStyle: {
-    type: Function,
-    required: true,
-  },
-  getCellClass: {
-    type: Function,
-    required: true,
-  },
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+
+const props = defineProps({
+  matrix: { type: Array, required: true },
+  form: { type: Object, required: true },
+  cellSize: { type: Number, required: true },
+  centerPx: { type: Number, required: true },
+  totalSize: { type: Number, required: true },
+  horseLineCoords: { type: Object, default: null },
+  horseLineFlatCoords: { type: Object, default: null },
+  mid: { type: Number, required: true },
+  modeEnabled: { type: Boolean, required: true },
+  trendPalette: { type: Object, required: true },
+  selectedCell: { type: Object, default: null },
+  highlightPos: { type: Object, default: () => ({ r: -1, c: -1 }) },
+  trendCells: { type: Array, default: () => [] },
+  mainPoints: { type: Array, default: () => [] },
+  crossPoints: { type: Array, default: () => [] },
 });
 
 const emit = defineEmits(["cell-click"]);
+const viewportRef = ref(null);
+const canvasRef = ref(null);
+const zoom = ref(1);
 
-function handleCellClick(rowIndex, colIndex) {
-  emit("cell-click", rowIndex, colIndex);
+let resizeObserver = null;
+let frameId = 0;
+
+const trendCellSet = computed(() => new Set(props.trendCells.map(point => `${point.r}:${point.c}`)));
+const drawCellSize = computed(() => Math.max(8, props.cellSize * zoom.value));
+const boardSize = computed(() => props.matrix.length * drawCellSize.value);
+const mainPointValues = computed(() => formatPointValues(props.mainPoints));
+const crossPointValues = computed(() => formatPointValues(props.crossPoints));
+
+function formatPointValues(points) {
+  const values = (points || [])
+    .map(point => point?.value ?? point)
+    .filter(value => value !== null && value !== undefined && value !== "");
+
+  return values.sort((a, b) => (
+    props.form.trendDirection === "down"
+      ? Number(b) - Number(a)
+      : Number(a) - Number(b)
+  ));
 }
+
+function scheduleRender() {
+  if (frameId) return;
+  frameId = requestAnimationFrame(() => {
+    frameId = 0;
+    renderCanvas();
+  });
+}
+
+function updateCanvasSize() {
+  const canvas = canvasRef.value;
+  if (!canvas || !props.matrix.length) return;
+
+  const dpr = window.devicePixelRatio || 1;
+  const size = Math.max(1, Math.ceil(boardSize.value));
+  canvas.width = Math.ceil(size * dpr);
+  canvas.height = Math.ceil(size * dpr);
+  canvas.style.width = `${size}px`;
+  canvas.style.height = `${size}px`;
+  scheduleRender();
+}
+
+function resetScrollToTopLeft() {
+  const viewport = viewportRef.value;
+  if (!viewport) return;
+  viewport.scrollLeft = 0;
+  viewport.scrollTop = 0;
+}
+
+function getCellFill(row, col) {
+  if (props.selectedCell?.r === row && props.selectedCell?.c === col) return props.trendPalette.selected;
+  if (trendCellSet.value.has(`${row}:${col}`)) return props.trendPalette.trend;
+  const layer = Math.max(Math.abs(row - props.mid), Math.abs(col - props.mid));
+  return layer % 3 === 0 ? "#fff6df" : "#e8f3ff";
+}
+
+function renderCanvas() {
+  const canvas = canvasRef.value;
+  const ctx = canvas?.getContext("2d");
+  if (!canvas || !ctx || !props.matrix.length) return;
+
+  const dpr = window.devicePixelRatio || 1;
+  const size = boardSize.value;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, size, size);
+  ctx.fillStyle = "#f8fbff";
+  ctx.fillRect(0, 0, size, size);
+  drawCells(ctx);
+  drawGuideLines(ctx);
+}
+
+function drawCells(ctx) {
+  const size = drawCellSize.value;
+  const valueFontSize = Math.max(10, Math.round((size * 0.3 * props.form.fontScale) / 100));
+  const coordFontSize = Math.max(7, Math.round((size * 0.18 * props.form.fontScale) / 100));
+  const textMaxWidth = Math.max(10, size - 8);
+
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  for (let row = 0; row < props.matrix.length; row += 1) {
+    const y = row * size;
+    const matrixRow = props.matrix[row];
+    for (let col = 0; col < matrixRow.length; col += 1) {
+      const x = col * size;
+      const isHighlight = props.highlightPos?.r === row && props.highlightPos?.c === col;
+
+      ctx.fillStyle = getCellFill(row, col);
+      ctx.fillRect(x, y, size, size);
+      ctx.strokeStyle = "rgba(34, 44, 74, 0.16)";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x + 0.5, y + 0.5, size - 1, size - 1);
+
+      if (isHighlight) {
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = "#ff7a00";
+        ctx.strokeRect(x + 1.5, y + 1.5, size - 3, size - 3);
+        ctx.lineWidth = 1;
+      }
+
+      ctx.fillStyle = "#0f172a";
+      ctx.font = `800 ${valueFontSize}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+      ctx.fillText(String(matrixRow[col]), x + size / 2, y + (props.form.showCoords ? size * 0.42 : size / 2), textMaxWidth);
+
+      if (props.form.showCoords) {
+        ctx.fillStyle = "#64748b";
+        ctx.font = `700 ${coordFontSize}px "Segoe UI", "Microsoft YaHei", sans-serif`;
+        ctx.fillText(`${row}:${col}`, x + size / 2, y + size * 0.68, textMaxWidth);
+      }
+    }
+  }
+}
+
+function drawGuideLines(ctx) {
+  const opacity = props.form.lineOpacity / 100;
+  const total = boardSize.value;
+  const center = props.centerPx * zoom.value;
+
+  if (props.form.showCross) {
+    drawBoardLine(ctx, center, 0, center, total, "#2d6cdf", opacity);
+    drawBoardLine(ctx, 0, center, total, center, "#2d6cdf", opacity);
+  }
+  if (props.form.showDiagonal) {
+    drawBoardLine(ctx, 0, 0, total, total, "#d9485f", opacity);
+    drawBoardLine(ctx, total, 0, 0, total, "#d9485f", opacity);
+  }
+  if (props.form.showHorseLine && props.horseLineCoords) {
+    const line = scaleLine(props.horseLineCoords);
+    drawBoardLine(ctx, line.x1, line.y1, line.x2, line.y2, "#7f56d9", opacity, [8, 4]);
+    drawBoardLine(ctx, total - line.x1, line.y1, total - line.x2, line.y2, "#7f56d9", opacity, [8, 4]);
+  }
+  if (props.form.showHorseLineFlat && props.horseLineFlatCoords) {
+    const line = scaleLine(props.horseLineFlatCoords);
+    drawBoardLine(ctx, line.x1, line.y1, line.x2, line.y2, "#159f7b", opacity, [8, 4]);
+    drawBoardLine(ctx, line.x1, total - line.y1, line.x2, total - line.y2, "#159f7b", opacity, [8, 4]);
+  }
+}
+
+function scaleLine(line) {
+  return {
+    x1: line.x1 * zoom.value,
+    y1: line.y1 * zoom.value,
+    x2: line.x2 * zoom.value,
+    y2: line.y2 * zoom.value,
+  };
+}
+
+function drawBoardLine(ctx, x1, y1, x2, y2, color, opacity, dash = []) {
+  ctx.save();
+  ctx.globalAlpha = opacity;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.setLineDash(dash);
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function handleCanvasClick(event) {
+  if (!props.modeEnabled) return;
+
+  const rect = canvasRef.value.getBoundingClientRect();
+  const col = Math.floor((event.clientX - rect.left) / drawCellSize.value);
+  const row = Math.floor((event.clientY - rect.top) / drawCellSize.value);
+
+  if (row < 0 || col < 0 || row >= props.matrix.length || col >= (props.matrix[row]?.length || 0)) return;
+  emit("cell-click", row, col);
+}
+
+function handleWheel(event) {
+  if (!event.ctrlKey) return;
+
+  event.preventDefault();
+  const viewport = viewportRef.value;
+  if (!viewport) return;
+
+  const rect = viewport.getBoundingClientRect();
+  const mouseX = event.clientX - rect.left;
+  const mouseY = event.clientY - rect.top;
+  const oldZoom = zoom.value;
+  const boardX = (viewport.scrollLeft + mouseX) / oldZoom;
+  const boardY = (viewport.scrollTop + mouseY) / oldZoom;
+  const nextZoom = clamp(oldZoom * (event.deltaY > 0 ? 0.9 : 1.1), 0.45, 3.2);
+
+  if (nextZoom === oldZoom) return;
+  zoom.value = nextZoom;
+
+  nextTick(() => {
+    updateCanvasSize();
+    viewport.scrollLeft = boardX * nextZoom - mouseX;
+    viewport.scrollTop = boardY * nextZoom - mouseY;
+  });
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+onMounted(() => {
+  updateCanvasSize();
+  resizeObserver = new ResizeObserver(() => {
+    updateCanvasSize();
+  });
+  if (viewportRef.value) resizeObserver.observe(viewportRef.value);
+  nextTick(resetScrollToTopLeft);
+});
+
+onBeforeUnmount(() => {
+  resizeObserver?.disconnect();
+  if (frameId) cancelAnimationFrame(frameId);
+});
+
+watch(() => props.matrix.length, () => nextTick(() => {
+  updateCanvasSize();
+  resetScrollToTopLeft();
+}));
+watch([drawCellSize, () => props.form.fontScale], () => {
+  updateCanvasSize();
+});
+watch(() => props.form, scheduleRender, { deep: true });
+watch(() => [props.selectedCell, props.highlightPos, props.trendCells, props.trendPalette], scheduleRender, { deep: true });
 </script>
 
 <style scoped>
 .board-panel {
   display: grid;
-  gap: 16px;
+  gap: 12px;
 }
 
 .trend-panel,
 .matrix-panel {
-  border: 1px solid rgba(34, 44, 74, 0.08);
-  border-radius: 24px;
-  background: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 16px 40px rgba(30, 57, 102, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.74);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.74);
+  box-shadow: 0 24px 70px rgba(42, 54, 77, 0.12);
+  backdrop-filter: blur(28px) saturate(1.25);
 }
 
 .trend-panel {
-  padding: 14px 16px;
+  padding: 14px;
 }
 
 .section-heading {
   margin-bottom: 10px;
 }
 
+.trend-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .section-heading h2 {
   margin: 0 0 4px;
+  color: #0f172a;
   font-size: 18px;
 }
 
 .section-heading p {
   margin: 0;
-  color: #607090;
+  color: #64748b;
   font-size: 13px;
-  line-height: 1.5;
 }
 
-.trend-layout {
-  display: grid;
-  grid-template-columns: minmax(220px, 1.1fr) minmax(180px, 0.9fr) minmax(220px, 1fr);
-  gap: 10px;
-  align-items: stretch;
-}
-
-.toggle-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 68px;
-  padding: 12px 14px;
+.trend-button {
   border: 1px solid rgba(34, 44, 74, 0.08);
-  border-radius: 16px;
-  background: #f9fbff;
-  box-sizing: border-box;
-}
-
-.toggle-card strong {
-  display: block;
-  margin-bottom: 4px;
-}
-
-.toggle-card p {
-  margin: 0;
-  color: #607090;
-  font-size: 13px;
-  line-height: 1.5;
+  border-radius: 8px;
+  background: rgba(248, 251, 255, 0.82);
 }
 
 .trend-switcher {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  gap: 6px;
+  min-width: 132px;
 }
 
 .trend-button {
-  min-height: 68px;
-  border: 1px solid rgba(34, 44, 74, 0.12);
-  border-radius: 14px;
-  background: #f4f7fb;
-  color: #42506a;
-  font-size: 15px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: all 0.2s ease;
+  min-height: 32px;
+  padding: 0 12px;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 900;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.86);
 }
 
 .trend-button.active.up {
@@ -316,222 +373,92 @@ function handleCellClick(rowIndex, colIndex) {
   color: #b0293d;
 }
 
-.legend-grid {
+.point-lists {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.legend-item {
-  display: flex;
-  align-items: center;
   gap: 8px;
-  padding: 8px 10px;
-  border-radius: 14px;
-  background: #f6f9fd;
+  margin-top: 10px;
+}
+
+.point-list {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  min-height: 42px;
+  padding: 10px 12px;
+  border: 1px solid rgba(34, 44, 74, 0.08);
+  border-radius: 8px;
+  background: rgba(248, 251, 255, 0.82);
+  color: #42506a;
   font-size: 13px;
-  font-weight: 600;
+  line-height: 1.55;
+  transition: none;
 }
 
-.legend-dot {
-  width: 12px;
-  height: 12px;
-  border-radius: 999px;
+.point-list strong {
+  color: #0f172a;
 }
 
-.selected-dot {
-  background: v-bind('trendPalette.selected');
+.tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  min-height: 22px;
 }
 
-.trend-dot {
-  background: v-bind('trendPalette.trend');
+.tag-row :deep(.el-tag) {
+  transition: none;
+  animation: none;
 }
 
-.search-dot {
-  background: #ff7a00;
+.point-empty {
+  color: #8a97ad;
 }
 
 .matrix-panel {
-  padding: 14px;
+  padding: 10px;
 }
 
-.matrix-scroll {
-  overflow: hidden;
-  border-radius: 18px;
+.matrix-viewport {
+  width: 100%;
+  height: min(76vh, 900px);
+  min-height: 560px;
+  overflow: auto;
+  border-radius: 8px;
+  background: #f8fbff;
+  overscroll-behavior: contain;
 }
 
-.matrix-wrapper {
-  position: relative;
-  display: inline-block;
+.matrix-canvas {
+  display: block;
   margin: 0;
-  padding: 6px;
-}
-
-.matrix-overlay {
-  position: absolute;
-  top: 6px;
-  left: 6px;
-  pointer-events: none;
-  z-index: 10;
-}
-
-.matrix {
-  position: relative;
-  z-index: 1;
-  width: max-content;
-}
-
-.row {
-  display: flex;
-}
-
-.cell {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  gap: 4px;
-  box-sizing: border-box;
-  transition: transform 0.2s ease, background-color 0.2s ease, border-color 0.2s ease;
-}
-
-.cell:hover {
-  transform: scale(0.98);
-}
-
-.cell.is-highlight {
-  z-index: 2;
-  animation: breathe 1.6s ease-in-out infinite;
-  box-shadow: 0 0 0 0 rgba(255, 122, 0, 0.48);
-}
-
-.cell-value {
-  font-size: var(--cell-value-size, 15px);
-  font-weight: 700;
-  line-height: 1;
-}
-
-.cell-coord {
-  font-size: var(--cell-coord-size, 10px);
-  color: #42506a;
-  line-height: 1;
-}
-
-.cell.coords-hidden {
-  gap: 0;
-}
-
-@keyframes breathe {
-  0% {
-    transform: scale(1);
-    box-shadow: 0 0 0 0 rgba(255, 122, 0, 0.42);
-  }
-
-  50% {
-    transform: scale(1.06);
-    box-shadow: 0 0 0 10px rgba(255, 122, 0, 0);
-  }
-
-  100% {
-    transform: scale(1);
-    box-shadow: 0 0 0 0 rgba(255, 122, 0, 0);
-  }
-}
-
-@media (max-width: 860px) {
-  .board-panel {
-    gap: 12px;
-  }
-
-  .trend-layout {
-    grid-template-columns: 1fr;
-    gap: 12px;
-  }
-
-  .trend-switcher {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .legend-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .trend-panel,
-  .matrix-panel {
-    padding: 12px;
-    border-radius: 18px;
-  }
+  cursor: crosshair;
 }
 
 @media (max-width: 560px) {
-  .trend-panel {
-    padding: 12px;
-    border-radius: 16px;
-  }
-
+  .trend-panel,
   .matrix-panel {
     padding: 10px;
-    border-radius: 16px;
   }
 
-  .section-heading {
-    margin-bottom: 8px;
-  }
-
-  .section-heading h2 {
-    font-size: 16px;
-  }
-
-  .section-heading p,
-  .toggle-card p,
-  .legend-item {
-    font-size: 12px;
-  }
-
-  .toggle-card {
-    align-items: flex-start;
-    min-height: auto;
-    padding: 12px;
-    border-radius: 14px;
+  .trend-heading {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .trend-switcher {
-    gap: 8px;
+    width: 100%;
   }
 
-  .trend-button {
-    min-height: 52px;
-    border-radius: 12px;
-    font-size: 14px;
+  .point-list {
+    grid-template-columns: 1fr;
+    gap: 4px;
   }
 
-  .legend-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px;
-  }
-
-  .legend-item {
-    min-height: 40px;
-    padding: 8px 10px;
-    border-radius: 12px;
-  }
-
-  .matrix-scroll {
-    overflow-x: auto;
-    overflow-y: hidden;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: thin;
-    padding-bottom: 2px;
-  }
-
-  .matrix-wrapper {
-    padding: 4px;
-  }
-
-  .matrix-overlay {
-    top: 4px;
-    left: 4px;
+  .matrix-viewport {
+    height: 68vh;
+    min-height: 380px;
   }
 }
 </style>
