@@ -30,6 +30,23 @@
           </label>
         </div>
       </div>
+      <!-- <div class="field-card backtest-card">
+        <span class="field-label">做多回测</span>
+        <div class="backtest-input-row">
+          <label>
+            <small>本金</small>
+            <el-input-number v-model="backtestForm.capital" :min="100" :step="1000" size="large" />
+          </label>
+          <label>
+            <small>容差%</small>
+            <el-input-number v-model="backtestForm.tolerancePct" :min="0" :step="0.05" :precision="2" size="large" />
+          </label>
+          <label>
+            <small>K线数</small>
+            <el-input-number v-model="backtestForm.lookaheadBars" :min="1" :step="1" :precision="0" size="large" />
+          </label>
+        </div>
+      </div> -->
     </div>
 
     <div
@@ -106,12 +123,13 @@
         :display-name="selectedStockDisplayName"
         @candle-select="handleCandleSelect"
         @major-turn-select="handleMajorTurnSelect"
+        @backtest-source-change="handleBacktestSourceChange"
       />
     </div>
 
     <StockProjectionStats
-      :stats="selectedProjectionStats"
-      @close="selectedProjectionStats = null"
+      :stats="activeProjectionStats"
+      @close="closeProjectionStats"
     />
   </section>
 </template>
@@ -120,6 +138,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
 import KLineChartView from "./KLineChartView.vue";
 import StockProjectionStats from "./StockProjectionStats.vue";
+import { runLongOnlyGannBacktest } from "../utils/marketBacktest";
 
 const props = defineProps({
   marketForm: {
@@ -136,7 +155,7 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(["price-select", "price-project"]);
+const emit = defineEmits(["price-select", "price-project", "time-anchor-select"]);
 const marketModel = defineModel("market", {
   type: String,
   default: "us",
@@ -185,6 +204,7 @@ const stocksLoading = ref(false);
 const stockSearch = ref("");
 const selectedStockDisplayName = ref("");
 const selectedProjectionStats = ref(null);
+const showProjectionStats = ref(false);
 const watchlistWidth = ref(340);
 const resizeState = reactive({
   active: false,
@@ -205,6 +225,31 @@ const stockGroupCounts = reactive({
   usOptions: 0,
   other: 0,
 });
+const DEFAULT_STOCKS = {
+  us: [
+    {
+      symbol: "AAPL",
+      name: "Apple Inc.",
+      displayName: "Apple",
+      market: "us",
+      board: "",
+      exchange: "NASDAQ",
+      latestPrice: "",
+      changePercent: null,
+    },
+  ],
+  cn: [],
+  hk: [],
+};
+const backtestSource = reactive({
+  candles: [],
+  turns: [],
+});
+const backtestForm = reactive({
+  capital: 10000,
+  tolerancePct: 0.5,
+  lookaheadBars: 20,
+});
 const activePeriod = computed(() => parsePeriod(periodKey.value));
 const activeStockList = computed(() => {
   const rows = stockLists[activeStockGroup.value] || [];
@@ -222,6 +267,26 @@ const activeStockList = computed(() => {
 });
 const rankedChartLevels = computed(() => (
   rankProjectedLevels(props.chartLevels, props.marketForm.anchorPrice)
+));
+const visibleBacktestLevels = computed(() => (
+  rankedChartLevels.value.filter(level => showCrossTrendLevels.value || level.lineType !== "cross")
+));
+const longOnlyBacktestStats = computed(() => {
+  if (!visibleBacktestLevels.value.length || !backtestSource.candles.length) return null;
+
+  return runLongOnlyGannBacktest(
+    backtestSource.candles,
+    visibleBacktestLevels.value,
+    backtestSource.turns,
+    {
+      capital: backtestForm.capital,
+      tolerancePct: Number(backtestForm.tolerancePct) / 100,
+      lookaheadBars: backtestForm.lookaheadBars,
+    }
+  );
+});
+const activeProjectionStats = computed(() => (
+  selectedProjectionStats.value || (showProjectionStats.value ? longOnlyBacktestStats.value : null)
 ));
 
 onMounted(() => {
@@ -246,6 +311,7 @@ async function loadWatchlist() {
   } catch (error) {
     console.warn("自选股列表获取失败。", error);
   } finally {
+    ensureDefaultWatchlist();
     stocksLoading.value = false;
   }
 }
@@ -277,6 +343,16 @@ function applyStockPayload(payload) {
   } else if (payload?.stocks && typeof payload.stocks === "object") {
     applyStockPayload(payload.stocks);
   }
+}
+
+function ensureDefaultWatchlist() {
+  stockGroups.forEach(group => {
+    if (stockLists[group.key]?.length) return;
+
+    const fallbackRows = DEFAULT_STOCKS[group.key] || [];
+    stockLists[group.key] = fallbackRows.map(item => ({ ...item }));
+    stockGroupCounts[group.key] = stockLists[group.key].length;
+  });
 }
 
 function normalizeStockRows(source, market) {
@@ -342,6 +418,7 @@ function selectStock(stock) {
   if (!isSameStock) {
     props.marketForm.anchorPrice = null;
     selectedProjectionStats.value = null;
+    showProjectionStats.value = false;
   }
 
   marketModel.value = nextMarket;
@@ -380,6 +457,7 @@ function projectFromInput() {
   if (!Number.isFinite(price) || price <= 0) return;
 
   selectedProjectionStats.value = null;
+  showProjectionStats.value = false;
   emit("price-project", price);
 }
 
@@ -392,10 +470,32 @@ function handleMajorTurnSelect(payload) {
   if (!Number.isFinite(price) || price <= 0) return;
 
   const direction = payload?.turn?.type === "low" || payload?.direction === "up" ? "up" : "down";
-  selectedProjectionStats.value = payload.stats || null;
+  selectedProjectionStats.value = null;
+  showProjectionStats.value = false;
   props.marketForm.anchorPrice = price;
   trendDirectionModel.value = direction;
+  emit("time-anchor-select", {
+    date: timestampToDate(payload?.turn?.timestamp),
+    type: payload?.turn?.type || "",
+    price,
+  });
   emit("price-project", { price, direction });
+}
+
+function handleBacktestSourceChange(payload) {
+  backtestSource.candles = Array.isArray(payload?.candles) ? payload.candles : [];
+  backtestSource.turns = Array.isArray(payload?.turns) ? payload.turns : [];
+}
+
+function closeProjectionStats() {
+  selectedProjectionStats.value = null;
+  showProjectionStats.value = false;
+}
+
+function timestampToDate(timestamp) {
+  const number = Number(timestamp);
+  if (!Number.isFinite(number)) return "";
+  return new Date(number < 1e12 ? number * 1000 : number).toISOString().slice(0, 10);
 }
 
 function parsePeriod(value) {
@@ -434,7 +534,7 @@ function rankProjectedLevels(levels, anchorPrice) {
       distance: Math.abs(Number(level.price) - anchor),
       kind: Number(level.price) < anchor ? "support" : "resistance",
     }))
-    .filter(level => Number.isFinite(level.price) && level.price >= 10 && level.distance > 0);
+    .filter(level => Number.isFinite(level.price) && level.price > 0 && level.distance > 0);
 
   const supports = assignLevelRanks(
     deduped.filter(level => level.kind === "support"),
@@ -548,7 +648,7 @@ h2 {
 
 .toolbar-grid {
   display: grid;
-  grid-template-columns: minmax(260px, 1.2fr) minmax(220px, 0.8fr);
+  grid-template-columns: minmax(260px, 0.9fr) minmax(220px, 0.7fr) minmax(320px, 1.2fr);
   gap: 10px;
 }
 
@@ -587,6 +687,25 @@ h2 {
   font-size: 13px;
   font-weight: 800;
   white-space: nowrap;
+}
+
+.backtest-input-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(96px, 1fr));
+  gap: 8px;
+  align-items: end;
+}
+
+.backtest-input-row label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.backtest-input-row small {
+  color: #607090;
+  font-size: 12px;
+  font-weight: 800;
 }
 
 :deep(.el-input-number),
@@ -791,6 +910,10 @@ h2 {
     grid-template-columns: 1fr 1fr;
   }
 
+  .backtest-card {
+    grid-column: 1 / -1;
+  }
+
   .chart-workspace {
     grid-template-columns: minmax(260px, var(--watchlist-width, 340px)) minmax(0, 1fr);
   }
@@ -817,6 +940,11 @@ h2 {
   }
 
   .price-action-row {
+    grid-template-columns: 1fr;
+  }
+
+  .backtest-input-row,
+  .trend-action-row {
     grid-template-columns: 1fr;
   }
 

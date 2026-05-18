@@ -44,7 +44,12 @@
       v-model:trend-direction="form.trendDirection"
       @price-select="handleMarketPriceSelect"
       @price-project="handleProjectPrice"
+      @time-anchor-select="handleTimeAnchorSelect"
     />
+
+    <!-- <GannTimeCyclePanel
+      :start-date="timeCycleStartDate"
+    /> -->
   </div>
 </template>
 
@@ -53,6 +58,7 @@ import { computed, reactive, ref, watch } from "vue";
 import AppHero from "./components/AppHero.vue";
 import BacktestPanel from "./components/BacktestPanel.vue";
 import ControlPanel from "./components/ControlPanel.vue";
+import GannTimeCyclePanel from "./components/GannTimeCyclePanel.vue";
 import MatrixBoard from "./components/MatrixBoard.vue";
 import { buildBacktestLevels } from "./utils/marketBacktest";
 import {
@@ -90,6 +96,7 @@ const matrix = ref([]);
 const selectedCell = ref(null);
 const trendCells = ref([]);
 const lastTrendResult = ref(null);
+const timeCycleStartDate = ref("");
 const searchNumber = ref(null);
 const highlightPos = ref({ r: -1, c: -1 });
 const BOARD_REFERENCE_SIZE = 1040;
@@ -424,6 +431,11 @@ function handleProjectPrice(payload, direction) {
   }
 
   handleMarketPriceSelect({ price });
+}
+
+function handleTimeAnchorSelect(payload) {
+  if (!payload?.date) return;
+  timeCycleStartDate.value = payload.date;
 }
 
 function sortLevelsByTrendDirection(levels, direction) {

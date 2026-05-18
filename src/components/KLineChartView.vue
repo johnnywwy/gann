@@ -282,7 +282,7 @@
 </template>
 
 <script setup>
-import { ActionType, dispose, init, LineType, LoadDataType, registerOverlay } from "klinecharts";
+import { ActionType, dispose, init, IndicatorSeries, LineType, LoadDataType, registerOverlay } from "klinecharts";
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { buildBacktestLevels } from "../utils/marketBacktest";
 import {
@@ -334,7 +334,7 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(["candle-select", "major-turn-select"]);
+const emit = defineEmits(["candle-select", "major-turn-select", "backtest-source-change"]);
 let majorTurnMarkerRegistered = false;
 const chartHost = ref(null);
 let chartApi = null;
@@ -688,6 +688,7 @@ async function reloadChartData() {
   clearHoverCandleInfo();
   majorTurnList.value = [];
   majorTurnLabels.value = [];
+  emitBacktestSource([], []);
   chartApi.clearData?.();
 
   try {
@@ -700,6 +701,14 @@ async function reloadChartData() {
       KLINE_PAGE_SIZE
     );
     if (currentRequest !== requestSerial || !chartApi) return;
+
+    if (!data.length) {
+      console.warn("K 线数据为空:", {
+        symbol: symbolInfo.value,
+        period: activePeriod.value,
+        range,
+      });
+    }
 
     loadedTimestampSet = new Set(data.map(item => item.timestamp));
     chartApi.applyNewData(data, hasMoreBefore(data[0]?.timestamp, activePeriod.value));
@@ -892,6 +901,7 @@ function renderMajorTurnOverlays() {
   const turns = detectMajorTurns(chartList, activePeriod.value);
   majorTurnList.value = turns;
   updateMajorTurnLabels(turns);
+  emitBacktestSource(chartList, turns);
   if (!turns.length) return;
 
   console.log("大级别转折:", turns.map(turn => ({
@@ -939,6 +949,13 @@ function updateMajorTurnLabels(turns) {
       };
     })
     .filter(Boolean);
+}
+
+function emitBacktestSource(candles = chartApi?.getDataList?.() || [], turns = majorTurnList.value) {
+  emit("backtest-source-change", {
+    candles: Array.isArray(candles) ? candles : [],
+    turns: Array.isArray(turns) ? turns : [],
+  });
 }
 
 function detectMajorTurns(candles, period) {
@@ -1370,9 +1387,16 @@ function renderLevelOverlays() {
   if (!chartApi) return;
 
   chartApi.removeOverlay({ groupId: "gann-levels" });
-  if (!props.levels.length) return;
+  if (!props.levels.length) {
+    removeProjectionRangeIndicator();
+    return;
+  }
 
-  const anchorPoint = getRightAnchorPoint(chartApi.getDataList() || []);
+  const chartList = chartApi.getDataList() || [];
+  const visibleLevels = getVisibleGannLevels();
+  syncProjectionRangeIndicator(visibleLevels, chartList);
+
+  const anchorPoint = getRightAnchorPoint(chartList);
   if (!anchorPoint) {
     if (overlayRetryCount < 20) {
       overlayRetryCount += 1;
@@ -1382,7 +1406,7 @@ function renderLevelOverlays() {
   }
   overlayRetryCount = 0;
 
-  const overlays = getVisibleGannLevels()
+  const overlays = visibleLevels
     .slice(0, 60)
     .map(level => createPriceLineOverlay(level, anchorPoint))
     .filter(Boolean);
@@ -1398,6 +1422,45 @@ function getVisibleGannLevels() {
   return (props.levels || []).filter(level => (
     props.showCrossTrendLevels || level.lineType !== "cross"
   ));
+}
+
+function syncProjectionRangeIndicator(levels, chartList) {
+  const prices = (levels || [])
+    .map(level => Number(level.price))
+    .filter(Number.isFinite);
+  if (!prices.length) {
+    removeProjectionRangeIndicator();
+    return;
+  }
+
+  const highs = (chartList || []).map(item => Number(item.high)).filter(Number.isFinite);
+  const lows = (chartList || []).map(item => Number(item.low)).filter(Number.isFinite);
+  const allValues = [...prices, ...highs, ...lows];
+  if (!allValues.length) return;
+
+  const minValue = allValues.reduce((min, value) => Math.min(min, value), Infinity);
+  const maxValue = allValues.reduce((max, value) => Math.max(max, value), -Infinity);
+  const padding = Math.max((maxValue - minValue) * 0.04, Math.abs(maxValue) * 0.002, 0.01);
+
+  chartApi.removeIndicator?.("candle_pane", "GANN_PROJECTION_RANGE");
+  chartApi.createIndicator?.({
+    name: "GANN_PROJECTION_RANGE",
+    shortName: "",
+    series: IndicatorSeries.Price,
+    visible: true,
+    shouldOhlc: false,
+    shouldFormatBigNumber: false,
+    precision: activeChartSettings.pricePrecision ?? 2,
+    calcParams: [],
+    figures: [],
+    minValue: minValue - padding,
+    maxValue: maxValue + padding,
+    calc: dataList => dataList.map(() => ({})),
+  }, true, { id: "candle_pane" });
+}
+
+function removeProjectionRangeIndicator() {
+  chartApi?.removeIndicator?.("candle_pane", "GANN_PROJECTION_RANGE");
 }
 
 function getRightAnchorPoint(chartList) {
